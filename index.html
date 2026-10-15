@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PassTic — Giao dịch ký quỹ cho vé concert</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily:{ sans:['"Be Vietnam Pro"','system-ui','sans-serif'] },
+      colors:{
+        navy:{50:'#EEF2F8',100:'#D6E0EF',300:'#8CA6C9',500:'#2E4E78',600:'#1C3A5E',700:'#152C47',800:'#0E2038',900:'#081426'},
+        mint:{50:'#ECFDF5',100:'#D1FAE5',300:'#6EE7B7',500:'#16A34A',600:'#108A3D',700:'#0C6E30'}
+      },
+      boxShadow:{ card:'0 1px 2px rgba(14,32,56,.06), 0 8px 24px rgba(14,32,56,.06)' }
+    }
+  }
+}
+</script>
+<style>
+  body{font-family:'Be Vietnam Pro',system-ui,sans-serif}
+  :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  *{box-sizing:border-box}
+  ::-webkit-scrollbar{height:8px;width:8px}
+  ::-webkit-scrollbar-thumb{background:#C9D5E4;border-radius:99px}
+  .scrollx{overflow-x:auto}
+  .step-line{position:relative}
+  .step-line::before{content:"";position:absolute;left:19px;top:40px;bottom:-4px;width:2px;background:#D6E0EF}
+  .step-line:last-child::before{display:none}
+  .mono{font-variant-numeric:tabular-nums}
+  dialog::backdrop{background:rgba(8,20,38,.55)}
+  dialog{border:none;border-radius:18px;padding:0}
+  @keyframes pulse2{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.35)}50%{box-shadow:0 0 0 10px rgba(22,163,74,0)}}
+  .pulse{animation:pulse2 1.6s infinite}
+  .fade{animation:fadein .25s ease}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body class="bg-[#F5F7FA] text-navy-800 min-h-screen">
+
+<!-- Header -->
+<header class="sticky top-0 z-30 bg-navy-800 text-white shadow-card">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <button id="logoBtn" data-go="home" class="flex items-center gap-2 font-extrabold text-lg tracking-tight shrink-0">
+      <span class="w-8 h-8 rounded-lg bg-mint-500 grid place-items-center text-navy-900">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      PassTic
+    </button>
+    <span id="syncBadge" class="text-xs text-navy-300 hidden md:inline">Giữ tiền trung gian cho giao dịch pass vé concert</span>
+    <div class="ml-auto flex items-center gap-2">
+      <div id="roleTabsWrap" class="flex bg-navy-700 rounded-xl p-1 text-sm font-semibold" role="tablist" aria-label="Chuyển vai trò">
+        <button data-role="buyer" class="rtab px-3 py-1.5 rounded-lg transition">Người mua</button>
+        <button data-role="seller" class="rtab px-3 py-1.5 rounded-lg transition">Người bán</button>
+      </div>
+    </div>
+  </div>
+  <nav id="subnav" class="max-w-6xl mx-auto px-4 sm:px-6 pb-2 flex gap-1 text-sm overflow-x-auto"></nav>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-20" id="app"></main>
+
+<div id="modalRoot"></div>
+<div id="toastRoot" class="fixed left-1/2 -translate-x-1/2 bottom-5 z-50 grid gap-2" aria-live="polite"></div>
+
+<script type="module">
+'use strict';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, onSnapshot, query, orderBy, limit, arrayUnion } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBiO3RXjpMJwp-iTKWZmgY0SATtQ_m9Se8",
+  authDomain: "enp-trunggianpassve-a9562.firebaseapp.com",
+  projectId: "enp-trunggianpassve-a9562",
+  storageBucket: "enp-trunggianpassve-a9562.firebasestorage.app",
+  messagingSenderId: "762270281318",
+  appId: "1:762270281318:web:c1724bde29d61bb3be87a7",
+  measurementId: "G-Z3B8QQFN26"
+};
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const dbFs = getFirestore(fbApp);
+
+const $=(s,r)=>(r||document).querySelector(s);
+const $all=(s,r)=>[...(r||document).querySelectorAll(s)];
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>Math.round(n||0).toLocaleString('vi-VN')+'đ';
+const pad=n=>String(n).padStart(2,'0');
+const rid=(p)=>(p||'')+Math.random().toString(36).slice(2,7).toUpperCase();
+
+/* ================= SETTINGS & CONSTANTS ================= */
+const settings={ feePercent:2, fixedFee:3000, partnerFeePercent:0.6, autoCompleteHours:48, ackDays:'', apiKey:'pk_live_mm_7f2a...e91c', apiSecret:'••••••••••••••••' };
+const ADMIN_PASSCODE='ADMIN2026';
+const SUPPORT_EMAIL='support@ben10.vn';
+const COMPLAINT_CATS=['Thanh toán','Không nhận được vé','Sai thông tin vé','Vé không đủ điều kiện chuyển giao','Nghi ngờ gian lận','Dữ liệu cá nhân','Khác'];
+const REFUND_POLICY='Nếu người bán gỡ tin sau khi bạn đã thanh toán, hoặc khiếu nại của bạn được xử thắng, tiền được hoàn về đúng tài khoản ngân hàng bạn đã đăng ký. Tiền chỉ được giải ngân cho người bán khi bạn xác nhận đã nhận vé hoặc hết thời gian kiểm vé mà không có khiếu nại.';
+
+const STATUS = {
+  CREATED:{label:'Khởi tạo',color:'navy'},
+  WAITING_PAYMENT:{label:'Chờ thanh toán',color:'amber'},
+  HOLDING_BY_PARTNER:{label:'Đối tác đã giữ tiền',color:'mint'},
+  DELIVERED:{label:'Người bán đã giao vé',color:'sky'},
+  COMPLETED:{label:'Hoàn tất',color:'mint'},
+  DISPUTED:{label:'Đang khiếu nại',color:'red'},
+  REFUNDED:{label:'Đã hoàn tiền',color:'slate'},
+  CANCELLED:{label:'Đã gỡ tin',color:'slate'}
+};
+const BADGE = {navy:'bg-navy-100 text-navy-700',amber:'bg-amber-100 text-amber-700',mint:'bg-mint-100 text-mint-700',sky:'bg-sky-100 text-sky-700',red:'bg-red-100 text-red-700',slate:'bg-slate-200 text-slate-600'};
+
+function computeFees(amount,feePayer){
+  const platformFee=Math.round(amount*settings.feePercent/100);
+  const partnerFee=Math.round(amount*settings.partnerFeePercent/100)+settings.fixedFee;
+  const feeTotal=platformFee+partnerFee;
+  let buyerTotal=amount, sellerReceive=amount;
+  if(feePayer==='BUYER'){ buyerTotal=amount+feeTotal; sellerReceive=amount; }
+  else if(feePayer==='SELLER'){ buyerTotal=amount; sellerReceive=amount-feeTotal; }
+  else { buyerTotal=amount+Math.round(feeTotal/2); sellerReceive=amount-Math.ceil(feeTotal/2); }
+  return {platformFee,partnerFee,feeTotal,buyerTotal,sellerReceive};
+}
+
+/* ================= DATA LAYER (Firebase: Auth ẩn danh + Firestore) ================= */
+let myId=null, mySellerPayout=null, myBuyerBank=null, booted=false;
+const maskAcct=no=>{ const d=(no||'').replace(/\s+/g,''); return d.length<=4?d:'••••'+d.slice(-4); };
+const fakeHolderName=n=>{ const s=(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').trim().toUpperCase(); return s||'NGUYEN VAN A'; };
+async function hashAcct(bank,no){
+  const s=(bank||'').trim().toLowerCase()+'|'+(no||'').replace(/\s+/g,'');
+  try{ if(window.crypto&&crypto.subtle){ const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,24); } }catch(e){}
+  let x=5381; for(const c of s) x=((x<<5)+x+c.charCodeAt(0))|0; return 'x'+(x>>>0).toString(16);
+}
+function acctFields(side,b){ return {[side+'BankName']:b.bank,[side+'AcctMasked']:maskAcct(b.no),[side+'AcctNo']:b.no,[side+'AcctName']:b.name,[side+'AcctHash']:b.hash,[side+'Phone']:b.phone||''}; }
+let orders=[], webhookLog=[]; let seq=1000;
+let writeChains=Object.create(null);
+
+function persistOrder(o,patch){
+  const id=o.id, prev=writeChains[id]||Promise.resolve();
+  writeChains[id]=prev.then(()=>updateDoc(doc(dbFs,'orders',id),patch)).catch(e=>console.error('order update failed',e));
+}
+function persistNewOrder(o){
+  setDoc(doc(dbFs,'orders',o.id), o).catch(e=>console.error('order create failed',e));
+}
+function persistLog(entry){
+  setDoc(doc(dbFs,'webhooklog',entry.id), entry).catch(e=>console.error('log write failed',e));
+}
+function persistBuyerBank(b){
+  if(!myId) return;
+  setDoc(doc(dbFs,'users',myId,'private','buyerbank'), b).catch(e=>console.error('buyer bank save failed',e));
+}
+function persistPayout(payout){
+  if(!myId) return;
+  setDoc(doc(dbFs,'users',myId,'private','payout'), payout).catch(e=>console.error('payout save failed',e));
+}
+function logEvent(orderId,partner,type,status,payload,fixedId){
+  const entry={id:fixedId||('EVT'+(++seq)+'-'+rid()),orderId,partner,type,status,ts:Date.now(),sig:true,payload:JSON.parse(JSON.stringify(payload||{}))};
+  webhookLog.unshift(entry); persistLog(entry);
+}
+function buildOrder(d){
+  const o=Object.assign({
+    id:rid('OD-'), roomCode:rid(''), roomPassword:null,
+    buyerUserId:null, sellerUserId:null, buyerName:'', sellerName:'',
+    itemName:'', tier:'', qty:1, description:'', amount:0, feePayer:'BUYER',
+    inspectionHours:24, status:'CREATED', createdAt:Date.now(), messages:[], evidences:[],
+    buyerBankName:null, buyerAcctMasked:null, buyerAcctName:null, buyerAcctHash:null,
+    sellerBankName:null, sellerAcctMasked:null, sellerAcctName:null, sellerAcctHash:null,
+    buyerAcctNo:null, sellerAcctNo:null, buyerPhone:'', sellerPhone:'',
+    adminMsgs:{buyer:[],seller:[]}, calls:{buyer:[],seller:[]},
+    eventAt:null, issuer:'', transferRestrictions:'', eligibilityConfirmedAt:null, review:null,
+    buyerConfirmedAt:null, complaint:null, disputeBy:null, resolution:null, appeal:null, escalation:null, cancel:null, autoCompletedAt:null,
+    paidAt:null, deliveredAt:null, completedAt:null, refundedAt:null, partnerTxId:null,
+    disputeReason:'', disputeEvidence:[],
+    hearing:null, platformCheckNotes:'', platformCheckAt:null
+  },d);
+  if(!o.roomPassword) o.roomPassword=String(Math.floor(1000+Math.random()*9000));
+  const f=computeFees(o.amount,o.feePayer); Object.assign(o,f);
+  return o;
+}
+function joinRoom(code,pass,role,displayName){
+  const o=orders.find(x=>x.roomCode===(code||'').trim().toUpperCase());
+  if(!o) return {ok:false,msg:'Không tìm thấy phòng với mã này.'};
+  if((o.roomPassword||'').toLowerCase()!==(pass||'').trim().toLowerCase()) return {ok:false,msg:'Mật khẩu không khớp với mã phòng này — kiểm tra lại với đối tác giao dịch.'};
+  if(!myId) return {ok:false,msg:'Đang kết nối tài khoản, thử lại sau vài giây.'};
+  if(role==='buyer'){
+    if(o.status==='CANCELLED') return {ok:false,msg:'Tin này đã được gỡ hoặc bị từ chối — không thể tham gia.'};
+    if(o.review&&o.review.status==='PENDING') return {ok:false,msg:'Tin này đang chờ PassTic kiểm tra — vui lòng thử lại sau.'};
+    if(o.review&&o.review.status==='REJECTED') return {ok:false,msg:'Tin này đã bị PassTic từ chối.'};
+    if(!myBuyerBank||!myBuyerBank.hash) return {ok:false,msg:'Bạn cần đăng ký tài khoản ngân hàng trước khi vào phòng.'};
+    if(o.sellerUserId===myId) return {ok:false,msg:'Tài khoản của bạn đang là người bán của phòng này — không thể đồng thời là người mua.'};
+    if(o.buyerUserId && o.buyerUserId!==myId) return {ok:false,msg:'Phòng này đã có người mua khác.'};
+    if(o.sellerAcctHash && o.sellerAcctHash===myBuyerBank.hash) return {ok:false,msg:'Tài khoản ngân hàng của bạn trùng với tài khoản của người bán — giao dịch bị chặn để phòng rửa tiền.'};
+    o.buyerUserId=myId; if(displayName) o.buyerName=displayName;
+    const bf=acctFields('buyer',myBuyerBank); Object.assign(o,bf);
+    const joinPatch=Object.assign({buyerUserId:myId,buyerName:o.buyerName},bf);
+    if(o.status==='CREATED'){ o.status='WAITING_PAYMENT'; joinPatch.status=o.status; }
+    persistOrder(o,joinPatch);
+  } else {
+    if(!mySellerPayout||!mySellerPayout.hash) return {ok:false,msg:'Bạn cần đăng ký tài khoản ngân hàng nhận tiền trước.'};
+    if(o.buyerUserId===myId) return {ok:false,msg:'Tài khoản của bạn đang là người mua của phòng này — không thể đồng thời là người bán.'};
+    if(o.sellerUserId && o.sellerUserId!==myId) return {ok:false,msg:'Phòng này đã có người bán khác tham gia.'};
+    if(o.buyerAcctHash && o.buyerAcctHash===mySellerPayout.hash) return {ok:false,msg:'Tài khoản ngân hàng của bạn trùng với tài khoản của người mua — giao dịch bị chặn để phòng rửa tiền.'};
+    o.sellerUserId=myId; if(displayName) o.sellerName=displayName;
+    const sf=acctFields('seller',mySellerPayout); Object.assign(o,sf);
+    persistOrder(o,Object.assign({sellerUserId:myId,sellerName:o.sellerName},sf));
+  }
+  return {ok:true,order:o};
+}
+function orderOf(id){ return orders.find(o=>o.id===id); }
+function settleDispute(o, winner, reason, basis){
+  const at=Date.now(); const patch={};
+  o.resolution={winner,reason,basis:basis||'',at}; patch.resolution=o.resolution;
+  if(o.hearing){ o.hearing.verdict=winner; o.hearing.verdictReason=reason; o.hearing.verdictAt=at;
+    patch['hearing.verdict']=winner; patch['hearing.verdictReason']=reason; patch['hearing.verdictAt']=at; }
+  if(winner==='buyer'){
+    o.status='REFUNDED'; o.refundedAt=at; patch.status=o.status; patch.refundedAt=at;
+    persistOrder(o,patch);
+    logEvent(o.id,'MOMO','REFUND','SUCCESS',{amount:o.buyerTotal,idk:'IDK-'+rid(),acct:o.buyerAcctMasked?('Đến '+o.buyerAcctMasked):undefined});
+    toast(reason==='no_show'?'Người bán vắng mặt quá hạn — đã hoàn tiền cho người mua':'Đã xử người mua thắng — hoàn tiền 100%');
+  } else {
+    o.status='COMPLETED'; o.completedAt=at; patch.status=o.status; patch.completedAt=at;
+    persistOrder(o,patch);
+    logEvent(o.id,'MOMO','PAYOUT','SUCCESS',{amount:o.sellerReceive,idk:'IDK-'+rid(),acct:o.sellerAcctMasked?('Đến '+o.sellerAcctMasked):undefined});
+    toast(reason==='no_show'?'Người mua vắng mặt quá hạn — đã giải ngân cho người bán':'Đã xử người bán thắng — giải ngân');
+  }
+  render();
+}
+function maybeAutoResolve(o){
+  if(!o||!o.hearing||o.hearing.verdict||o.status!=='DISPUTED'||o.escalation) return;
+  const {buyerJoined,sellerJoined}=o.hearing;
+  if(buyerJoined===sellerJoined) return;
+  settleDispute(o, buyerJoined?'buyer':'seller', 'no_show', buyerJoined?'Người bán không tham gia phiên đối chất đúng hạn nên người mua được xử thắng.':'Người mua không tham gia phiên đối chất đúng hạn nên người bán được xử thắng.');
+}
+function adminNotify(o,side,text){
+  const msg={from:'admin',text,ts:Date.now()};
+  if(!o.adminMsgs) o.adminMsgs={buyer:[],seller:[]};
+  o.adminMsgs[side]=[...(o.adminMsgs[side]||[]),msg];
+  persistOrder(o,{['adminMsgs.'+side]:arrayUnion(msg)});
+}
+function autoCompleteIfDue(o){
+  if(!o||o.status!=='DELIVERED'||!o.deliveredAt||o.autoCompletedAt) return false;
+  if(Date.now()<o.deliveredAt+o.inspectionHours*3600*1000) return false;
+  const at=Date.now();
+  o.status='COMPLETED'; o.completedAt=at; o.autoCompletedAt=at;
+  persistOrder(o,{status:o.status,completedAt:at,autoCompletedAt:at});
+  logEvent(o.id,'MOMO','PAYOUT','SUCCESS',{amount:o.sellerReceive,idk:'IDK-AUTO-'+o.id,acct:(o.sellerAcctMasked?('Đến '+o.sellerAcctMasked+' · '):'')+'tự động sau thời gian kiểm vé'},'AUTO-'+o.id);
+  toast('Hết thời gian kiểm vé — đã tự động giải ngân cho người bán');
+  return true;
+}
+function autoReview(o){
+  const reasons=[];
+  if(/(cấm|không\s*(được\s*)?(chuyển|nhượng|bán lại|tặng))/i.test(o.transferRestrictions||'')) reasons.push('Mục "hạn chế chuyển giao" có dấu hiệu mâu thuẫn với xác nhận vé được phép chuyển giao.');
+  riskFlags(o).filter(f=>f.lv==='high').forEach(f=>reasons.push(f.t));
+  return {status:reasons.length?'PENDING':'APPROVED',reasons,checkedAt:Date.now(),by:'auto'};
+}
+function myOrders(role){
+  const mine=role==='buyer'?orders.filter(o=>o.buyerUserId===myId):orders.filter(o=>o.sellerUserId===myId);
+  return mine.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+
+async function boot(){
+  await new Promise(resolve=>{
+    onAuthStateChanged(auth, async (user)=>{
+      if(user){ myId=user.uid; resolve(); return; }
+      try{ const cred=await signInAnonymously(auth); myId=cred.user.uid; }
+      catch(e){ console.error('đăng nhập ẩn danh thất bại',e); myId=null; }
+      resolve();
+    });
+  });
+
+  onSnapshot(collection(dbFs,'orders'), snap=>{
+    orders = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    orders.forEach(o=>{ if(myId&&(o.buyerUserId===myId||o.sellerUserId===myId||state.role==='admin')) autoCompleteIfDue(o); });
+    if(booted) render();
+  }, e=>console.error('orders snapshot error',e));
+
+  onSnapshot(query(collection(dbFs,'webhooklog'), orderBy('ts','desc'), limit(50)), snap=>{
+    webhookLog = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    if(booted) render();
+  }, e=>console.error('log snapshot error',e));
+
+  if(myId){
+    try{ const p=await getDoc(doc(dbFs,'users',myId,'private','payout')); if(p.exists()) mySellerPayout=p.data(); }catch(e){}
+    try{ const b=await getDoc(doc(dbFs,'users',myId,'private','buyerbank')); if(b.exists()) myBuyerBank=b.data(); }catch(e){}
+  }
+  booted=true; console.log('PassTic v8');
+  const sb=$('#syncBadge');
+  if(sb) sb.textContent = myId ? 'Đồng bộ trực tiếp qua Firebase — bạn và đối tác giao dịch dùng chung dữ liệu' : 'Không kết nối được Firebase — thử tải lại trang';
+  render();
+}
+
+function toast(msg,kind){
+  const el=document.createElement('div');
+  el.className='fade px-4 py-2.5 rounded-xl shadow-card text-sm font-semibold text-white '+(kind==='err'?'bg-red-600':kind==='warn'?'bg-amber-600':'bg-navy-800');
+  el.textContent=msg; $('#toastRoot').appendChild(el); setTimeout(()=>el.remove(),3200);
+}
+function openModal(html){
+  $('#modalRoot').innerHTML=`<dialog id="dlg" class="w-[min(92vw,460px)]">${html}</dialog>`;
+  const dlg=$('#dlg'); dlg.showModal();
+  dlg.addEventListener('cancel',()=>dlg.remove());
+  return dlg;
+}
+function closeModal(){ const d=$('#dlg'); if(d) d.close(), d.remove(); }
+
+/* ================= SHARED UI PIECES ================= */
+function badge(status){ const s=STATUS[status]; return `<span class="text-xs font-bold px-2.5 py-1 rounded-full ${BADGE[s.color]}">${s.label}</span>`; }
+function card(inner,cls){ return `<div class="bg-white rounded-2xl shadow-card p-5 ${cls||''}">${inner}</div>`; }
+function field(label,inputHtml,hint){
+  return `<label class="block mb-4"><span class="block text-sm font-semibold text-navy-700 mb-1.5">${label}</span>${inputHtml}${hint?`<span class="block text-xs text-navy-300 mt-1">${hint}</span>`:''}</label>`;
+}
+const inCls='w-full rounded-xl border border-navy-100 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-mint-500 focus:border-mint-500';
+function btn(label,attrs,variant){
+  const v={primary:'bg-mint-500 hover:bg-mint-600 text-white',navy:'bg-navy-800 hover:bg-navy-700 text-white',ghost:'bg-white hover:bg-navy-50 text-navy-700 ring-1 ring-navy-100',danger:'bg-red-600 hover:bg-red-700 text-white',amber:'bg-amber-500 hover:bg-amber-600 text-white'}[variant||'primary'];
+  return `<button ${attrs} class="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition ${v} disabled:opacity-40 disabled:cursor-not-allowed">${label}</button>`;
+}
+function roomSummaryRow(o,role){
+  return `<button data-go="room" data-id="${o.id}" class="w-full text-left bg-white rounded-2xl shadow-card p-4 flex items-center gap-4 hover:ring-2 hover:ring-mint-300 transition">
+    <div class="w-11 h-11 rounded-xl bg-navy-800 text-white grid place-items-center font-extrabold text-sm shrink-0">${esc(o.itemName.slice(0,1)||'V')}</div>
+    <div class="min-w-0 flex-1">
+      <div class="font-bold truncate">${esc(o.itemName)} <span class="text-navy-300 font-medium">· ${esc(o.tier)} · ${o.qty} vé</span></div>
+      <div class="text-xs text-navy-400 mono">${esc(o.id)} · ${role==='seller'?'Người mua: '+(o.buyerName?esc(o.buyerName):'chưa tham gia'):'Người bán: '+(o.sellerName?esc(o.sellerName):'chưa tham gia')}</div>
+    </div>
+    <div class="text-right shrink-0"><div class="font-extrabold">${money(o.amount)}</div>${badge(o.status)}</div>
+  </button>`;
+}
+function emptyState(t){ return `<div class="text-center text-navy-300 py-14 text-sm">${t}</div>`; }
+
+/* ================= ROLE GATE & ONBOARDING ================= */
+function roleGate(){
+  return `<div class="min-h-[70vh] grid place-items-center">
+  <div class="text-center max-w-xl">
+    <div class="w-14 h-14 mx-auto rounded-2xl bg-mint-500 grid place-items-center text-navy-900 mb-4">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2L4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <h1 class="text-3xl font-extrabold text-navy-800 mb-2">Bạn đến đây để mua hay bán vé?</h1>
+    <p class="text-navy-400 mb-2">Chọn vai trò để bắt đầu. Tiền giao dịch được đối tác thanh toán giữ hộ cho đến khi cả hai bên xác nhận.</p>
+    <p class="text-xs text-navy-300 mb-8">${myId?'Dữ liệu được đồng bộ trực tiếp qua Firebase với đối tác giao dịch của bạn — mở link này trên một trình duyệt khác để đóng vai đối tác.':'Đang kết nối Firebase… nếu dòng này không biến mất, hãy tải lại trang.'}</p>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <button data-act="pickRole" data-role="buyer" class="bg-white rounded-2xl shadow-card p-6 text-left hover:ring-2 hover:ring-mint-400 transition">
+        <div class="text-3xl mb-2">🎟️</div><div class="font-extrabold text-lg mb-1">Tôi là Người mua</div><div class="text-sm text-navy-400">Nhập mã phòng người bán gửi, thanh toán ký quỹ và nhận vé an toàn.</div></button>
+      <button data-act="pickRole" data-role="seller" class="bg-white rounded-2xl shadow-card p-6 text-left hover:ring-2 hover:ring-navy-400 transition">
+        <div class="text-3xl mb-2">💳</div><div class="font-extrabold text-lg mb-1">Tôi là Người bán</div><div class="text-sm text-navy-400">Cài đặt nhận tiền, tạo phòng đăng vé và giao vé để nhận thanh toán.</div></button>
+    </div>
+  </div></div>`;
+}
+function onboardBuyer(){
+  const p=myBuyerBank||{};
+  const errHtml = state.err?`<p class="text-red-600 text-sm font-semibold mb-3">${esc(state.err)}</p>`:'';
+  return `<div class="max-w-md mx-auto">
+  <h1 class="text-2xl font-extrabold mb-1 text-center">Bắt đầu với vai trò Người mua</h1>
+  <p class="text-navy-400 text-sm mb-5 text-center">Điền thông tin của bạn rồi nhập mã phòng + mật khẩu mà người bán đã gửi để vào phòng giao dịch.</p>
+  ${card(`
+    ${errHtml}
+    <h3 class="font-extrabold mb-3">1. Thông tin của bạn</h3>
+    ${field('Tên hiển thị',`<input id="ob-name" class="${inCls}" value="${esc(state.buyerDisplayName)}">`)}
+    ${field('Số điện thoại',`<input id="ob-phone" class="${inCls}" value="${esc(state.buyerPhone)}">`)}
+    <h3 class="font-extrabold mb-1 mt-5">2. Tài khoản ngân hàng sẽ dùng</h3>
+    <p class="text-xs text-navy-400 mb-3">Bắt buộc, để phòng rửa tiền: chỉ tiền chuyển từ đúng tài khoản này mới được nhận, và tiền hoàn (nếu có) chỉ về lại tài khoản này.</p>
+    ${field('Ngân hàng / Ví điện tử',`<select id="ob-bank" class="${inCls}"><option ${p.bank==='MoMo'?'selected':''}>MoMo</option><option ${p.bank==='Vietcombank'?'selected':''}>Vietcombank</option><option ${p.bank==='ACB'?'selected':''}>ACB</option><option ${p.bank==='Techcombank'?'selected':''}>Techcombank</option></select>`)}
+    ${field('Số tài khoản / số điện thoại ví',`<input id="ob-no" class="${inCls}" value="${esc(p.no||'')}">`)}
+    <div class="flex gap-2 items-end mb-4"><div class="flex-1">${field('Tên chủ tài khoản',`<input id="ob-accname" class="${inCls}" value="${esc(p.name||'')}" placeholder="Bấm kiểm tra để tự điền">`)}</div>${btn('Kiểm tra tên','data-act="checkAccNameBuyer"','navy')}</div>
+    <h3 class="font-extrabold mb-3 mt-5">3. Vào phòng giao dịch</h3>
+    ${field('Mã phòng',`<input id="ob-code" class="${inCls}" value="${esc(state.obCode||'')}" placeholder="Mã do người bán chia sẻ">`)}
+    ${field('Mật khẩu phòng',`<input id="ob-pass" type="password" class="${inCls}">`,'Mật khẩu này phải khớp với mật khẩu người bán đã đặt khi tạo phòng.')}
+    ${btn('Hoàn tất & vào phòng','data-act="submitBuyerOnboard"')}
+  `)}</div>`;
+}
+function onboardSeller(){
+  const errHtml = state.err?`<p class="text-red-600 text-sm font-semibold mb-3">${esc(state.err)}</p>`:'';
+  const p=mySellerPayout||{};
+  return `<div class="max-w-lg mx-auto">
+  <h1 class="text-2xl font-extrabold mb-1 text-center">Thiết lập tài khoản Người bán</h1>
+  <p class="text-navy-400 text-sm mb-5 text-center">Điền thông tin nhận tiền, sau đó bạn sẽ tạo phòng đăng vé và gửi mã phòng cho người mua.</p>
+  ${card(`
+    ${errHtml}
+    <h3 class="font-extrabold mb-3">1. Thông tin của bạn</h3>
+    ${field('Tên hiển thị',`<input id="os-name" class="${inCls}" value="${esc(state.sellerDisplayName)}">`)}
+    ${field('Số điện thoại',`<input id="os-phone" class="${inCls}" value="${esc(state.sellerPhone)}">`)}
+    <h3 class="font-extrabold mb-1 mt-5">2. Tài khoản ngân hàng nhận tiền</h3>
+    <p class="text-xs text-navy-400 mb-3">Bắt buộc, để phòng rửa tiền: tiền giải ngân chỉ được chuyển về đúng tài khoản này, và không được trùng với tài khoản của người mua.</p>
+    ${field('Ngân hàng / Ví điện tử',`<select id="os-bank" class="${inCls}"><option ${p.bank==='MoMo'?'selected':''}>MoMo</option><option ${p.bank==='Vietcombank'?'selected':''}>Vietcombank</option><option ${p.bank==='ACB'?'selected':''}>ACB</option><option ${p.bank==='Techcombank'?'selected':''}>Techcombank</option></select>`)}
+    ${field('Số tài khoản / số điện thoại ví',`<input id="os-no" class="${inCls}" value="${esc(p.no||'')}">`)}
+    <div class="flex gap-2 items-end mb-4"><div class="flex-1">${field('Tên chủ tài khoản',`<input id="os-accname" class="${inCls}" value="${esc(p.name||'')}" placeholder="Bấm kiểm tra để tự điền">`)}</div>${btn('Kiểm tra tên','data-act="checkAccNameOnboard"','navy')}</div>
+    ${btn('Hoàn tất & tạo phòng giao dịch','data-act="submitSellerOnboard"')}
+  `)}</div>`;
+}
+
+/* ================= SCREENS: BUYER ================= */
+function buyerHome(){
+  const list=myOrders('buyer');
+  return `<div class="flex items-center justify-between flex-wrap gap-3 mb-5">
+    <div><h1 class="text-2xl font-extrabold">Phòng giao dịch của bạn</h1><p class="text-navy-400 text-sm">Tiền được đối tác thanh toán giữ hộ cho đến khi bạn xác nhận nhận đúng vé.</p></div>
+    <div class="flex gap-2">${btn('Nhập mã phòng','data-act="openJoin2" data-role="buyer"')}</div></div>
+  ${card(`<div class="flex items-center gap-3 text-sm"><span class="w-9 h-9 rounded-full bg-mint-100 text-mint-700 grid place-items-center font-bold">0</span>
+     <p><b>Zero-Wallet:</b> PassTic không giữ số dư ví của bạn. Toàn bộ tiền được thu, tạm giữ và giải ngân qua cổng thanh toán đối tác (MoMo / Bảo Kim / PayOS).</p></div>`,'mb-5 bg-navy-50 ring-1 ring-navy-100')}
+  <div class="grid gap-3">${list.length?list.map(o=>roomSummaryRow(o,'buyer')).join(''):emptyState('Bạn chưa có phòng giao dịch nào. Bấm "Nhập mã phòng" và nhập mã + mật khẩu mà người bán đã gửi cho bạn.')}</div>`;
+}
+
+function sellerCreate(){
+  const d=state.create;
+  const f=computeFees(+d.amount||0,d.feePayer||'BUYER');
+  state.err_html = state.err?`<p class="text-red-600 text-sm font-semibold mb-3">${esc(state.err)}</p>`:'';
+  return `<button data-go="sellerOrders" class="text-sm font-semibold text-navy-400 mb-3">← Quay lại</button>
+  <h1 class="text-2xl font-extrabold mb-1">Tạo phòng đăng vé</h1>
+  <p class="text-navy-400 text-sm mb-5">Điền thông tin vé bạn muốn pass. Sau khi tạo, bạn sẽ nhận mã phòng + mật khẩu để gửi riêng cho người mua.</p>
+  <div class="grid lg:grid-cols-[1fr_300px] gap-5">
+  <div>${card(`
+    ${state.err_html}
+    ${field('Tên show / sự kiện',`<input id="f-item" class="${inCls}" value="${esc(d.itemName||'')}" placeholder="VD: Neon Pop Carnival">`)}
+    <div class="grid grid-cols-2 gap-3">
+      ${field('Hạng vé',`<input id="f-tier" class="${inCls}" value="${esc(d.tier||'')}" placeholder="VIP, CAT 1...">`)}
+      ${field('Số lượng',`<input id="f-qty" type="number" min="1" class="${inCls}" value="${esc(d.qty||1)}">`)}
+    </div>
+    ${field('Ngày giờ diễn ra sự kiện',`<input id="f-eventat" type="datetime-local" class="${inCls}" value="${esc(d.eventAt||'')}">`)}
+    ${field('Nơi phát hành vé',`<input id="f-issuer" class="${inCls}" value="${esc(d.issuer||'')}" placeholder="VD: Ticketbox, fanpage ban tổ chức…">`)}
+    ${field('Hạn chế chuyển giao đã biết',`<textarea id="f-restrict" class="${inCls} min-h-[64px]" placeholder="Ghi 'Không có' nếu vé không có hạn chế. Nếu ban tổ chức cấm chuyển nhượng, vui lòng không đăng.">${esc(d.restrictions||'')}</textarea>`)}
+    ${field('Mô tả chi tiết điều kiện cam kết',`<textarea id="f-desc" class="${inCls} min-h-[84px]">${esc(d.description||'')}</textarea>`,'Vị trí ghế, tình trạng vé, cam kết đổi trả nếu vé lỗi…')}
+    ${field('Giá bán vé (VNĐ)',`<input id="f-amount" type="number" min="0" step="10000" class="${inCls}" value="${esc(d.amount||'')}">`)}
+    ${field('Bên chịu phí dịch vụ',`<div class="grid grid-cols-3 gap-2">${[['BUYER','Người mua'],['SELLER','Người bán'],['SPLIT','Chia đôi']].map(([v,l])=>`<label class="text-xs font-bold text-center rounded-xl ring-1 ring-navy-100 py-2 cursor-pointer ${((d.feePayer||'BUYER')===v)?'bg-navy-800 text-white ring-navy-800':'bg-white'}"><input type="radio" name="feePayer" value="${v}" class="hidden" ${((d.feePayer||'BUYER')===v)?'checked':''}>${l}</label>`).join('')}</div>`)}
+    ${field('Thời gian kiểm hàng tối đa',`<select id="f-insp" class="${inCls}">${[12,24,48,72].map(h=>`<option value="${h}" ${+(d.inspectionHours||24)===h?'selected':''}>${h} giờ</option>`).join('')}</select>`,'Nếu người mua không xác nhận hoặc khiếu nại trong thời gian này sau khi bạn giao vé, hệ thống tự giải ngân cho bạn.')}
+    ${field('Đặt mật khẩu phòng',`<input id="f-pass" class="${inCls}" value="${esc(d.password||'')}" placeholder="VD: vedem2026">`,'Chỉ chia sẻ mật khẩu này riêng cho người mua — họ phải nhập đúng mới vào được phòng.')}
+    <label class="flex gap-2 items-start text-sm mb-3"><input id="f-elig" type="checkbox" class="mt-1" ${d.elig?'checked':''}><span>Tôi đã kiểm tra điều kiện của nhà tổ chức/hệ thống phát hành và vé này được phép chuyển giao qua tính năng chính thức áp dụng cho vé đó.</span></label>
+    <p class="text-xs text-navy-400 mb-4">PassTic kiểm tra tính đầy đủ và dấu hiệu rủi ro của tin, và có thể yêu cầu bằng chứng (đã che dữ liệu nhạy cảm). Việc kiểm tra này không phải xác nhận của Ticketbox hay nhà phát hành vé.</p>
+    ${btn('Tạo phòng và lấy mã mời người mua','data-act="submitCreate"')}
+  `)}</div>
+  <div>${card(`
+    <h3 class="font-extrabold mb-3">Tạm tính</h3>
+    <div class="grid gap-2 text-sm">
+      <div class="flex justify-between"><span class="text-navy-400">Giá bán vé</span><b id="prv-amount">${money(d.amount||0)}</b></div>
+      <div class="flex justify-between"><span class="text-navy-400">Phí nền tảng (${settings.feePercent}%)</span><b id="prv-platform">${money(f.platformFee)}</b></div>
+      <div class="flex justify-between"><span class="text-navy-400">Phí cổng thanh toán</span><b id="prv-partner">${money(f.partnerFee)}</b></div>
+      <div class="h-px bg-navy-100 my-1"></div>
+      <div class="flex justify-between text-xs text-navy-400"><span>Người mua sẽ thanh toán</span><b id="prv-total">${money(f.buyerTotal)}</b></div>
+      <div class="flex justify-between text-base"><span class="font-bold">Bạn nhận được</span><b id="prv-receive" class="text-mint-600">${money(f.sellerReceive)}</b></div>
+    </div>`,'sticky top-24')}</div>
+  </div>`;
+}
+
+function shareRoom(){
+  const o=orderOf(state.orderId); if(!o) return sellerOrders();
+  return `<div class="max-w-md mx-auto">${card(`
+    <div class="text-center mb-4"><div class="text-3xl mb-2">🔐</div><h2 class="text-xl font-extrabold">Đã tạo phòng đăng vé</h2><p class="text-navy-400 text-sm">Gửi mã phòng và mật khẩu dưới đây cho người mua qua kênh riêng của bạn (Zalo, Messenger…). PassTic không tự động chia sẻ thông tin này.</p></div>
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="bg-navy-50 rounded-xl p-3 text-center"><div class="text-xs text-navy-400 mb-1">Mã phòng</div><div class="font-mono font-extrabold text-lg">${esc(o.roomCode)}</div></div>
+      <div class="bg-navy-50 rounded-xl p-3 text-center"><div class="text-xs text-navy-400 mb-1">Mật khẩu</div><div class="font-mono font-extrabold text-lg">${esc(o.roomPassword)}</div></div>
+    </div>
+    <p class="text-xs text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-xl p-3 mb-4">⚠ Người mua phải nhập đúng cả mã phòng lẫn mật khẩu này thì mới vào được phòng — và phải mở bằng một tài khoản/thiết bị khác với bạn. Bạn có thể xem lại mã + mật khẩu bất cứ lúc nào trong phòng.</p>
+    ${o.review&&o.review.status==='PENDING'?'<p class="text-xs text-amber-800 bg-amber-50 ring-1 ring-amber-200 rounded-xl p-3 mb-4">Tin của bạn cần PassTic kiểm tra trước — người mua chỉ vào được sau khi tin được duyệt.</p>':''}
+    ${btn('Vào phòng của tôi','data-go="room" data-id="'+o.id+'"')}
+  `)}</div>`;
+}
+
+function buyerPayment(){
+  const o=orderOf(state.orderId); if(!o) return buyerHome();
+  if(o.status==='CANCELLED') return `<div class="max-w-md mx-auto">${card('<p class="font-bold">Tin đã được gỡ — không thể thanh toán.</p>')}</div>`;
+  if(!o.buyerConfirmedAt){
+    const feeBuyer=o.buyerTotal-o.amount;
+    return `<div class="max-w-md mx-auto">
+      <button data-go="room" data-id="${o.id}" class="text-sm font-semibold text-navy-400 mb-3">← Quay lại phòng</button>
+      ${card(`<div class="flex items-center justify-between mb-3"><h2 class="font-extrabold text-lg">Xác nhận trước khi thanh toán</h2>${badge(o.status)}</div>
+        <dl class="grid grid-cols-[120px_1fr] gap-y-2 text-sm mb-4">
+          <dt class="text-navy-400">Sự kiện</dt><dd class="font-semibold">${esc(o.itemName)}</dd>
+          <dt class="text-navy-400">Thời gian</dt><dd>${o.eventAt?new Date(o.eventAt).toLocaleString('vi-VN'):'—'}</dd>
+          <dt class="text-navy-400">Hạng vé</dt><dd>${esc(o.tier)} · ${o.qty} vé</dd>
+          <dt class="text-navy-400">Nơi phát hành</dt><dd>${o.issuer?esc(o.issuer):'—'}</dd>
+          <dt class="text-navy-400">Hạn chế chuyển giao</dt><dd>${o.transferRestrictions?esc(o.transferRestrictions):'—'}</dd>
+          <dt class="text-navy-400">Thời gian kiểm vé</dt><dd>${o.inspectionHours} giờ sau khi nhận vé</dd>
+        </dl>
+        <div class="bg-navy-50 rounded-xl p-3 text-sm grid gap-1.5 mb-4">
+          <div class="flex justify-between"><span class="text-navy-400">Giá vé</span><b>${money(o.amount)}</b></div>
+          <div class="flex justify-between"><span class="text-navy-400">Phí bạn chịu</span><b>${money(feeBuyer)}</b></div>
+          <div class="flex justify-between text-base"><span class="font-bold">Tổng phải trả</span><b class="text-mint-600">${money(o.buyerTotal)}</b></div>
+        </div>
+        <p class="text-xs text-navy-500 mb-4"><b>Chính sách hoàn tiền:</b> ${esc(REFUND_POLICY)}</p>
+        <label class="flex gap-2 items-start text-sm mb-4"><input id="pay-ack" type="checkbox" class="mt-1"><span>Tôi đã xem thông tin vé, hạn chế chuyển giao, tổng số tiền phải trả và chính sách hoàn tiền.</span></label>
+        ${btn('Xác nhận & tiếp tục thanh toán','data-act="confirmPay" data-id="'+o.id+'"')}`)}</div>`;
+  }
+  return `<div class="max-w-md mx-auto">
+  <button data-go="home" class="text-sm font-semibold text-navy-400 mb-3">← Danh sách phòng</button>
+  ${card(`
+    <div class="flex items-center justify-between mb-3"><h2 class="font-extrabold text-lg">Thanh toán ký quỹ</h2>${badge(o.status)}</div>
+    <p class="text-sm text-navy-400 mb-3">${esc(o.itemName)} · ${esc(o.tier)} · ${o.qty} vé</p>
+    <p class="text-xs bg-navy-50 text-navy-600 rounded-xl p-3 mb-4">Chế độ prototype: mã QR và trạng thái thanh toán chỉ được mô phỏng, không có tiền thật.</p>
+    <div class="bg-navy-50 rounded-2xl p-5 grid place-items-center mb-3">
+      <div class="w-44 h-44 bg-white rounded-xl grid grid-cols-6 grid-rows-6 gap-[3px] p-3" aria-label="Mã QR thanh toán">
+        ${Array.from({length:36}).map((_,i)=>`<div class="${(i*7+(o.id.length))%3===0?'bg-navy-800':'bg-transparent'} rounded-[2px]"></div>`).join('')}
+      </div>
+    </div>
+    <div class="text-center mb-3"><div class="text-xs text-navy-400">Mã đơn hàng</div><div class="font-mono font-bold">${esc(o.id)}</div></div>
+    <div class="text-center mb-4"><div class="text-2xl font-extrabold text-navy-800">${money(o.buyerTotal)}</div><div class="text-xs text-navy-400">Nội dung CK: PASSTIC ${esc(o.id)}</div></div>
+    ${o.buyerAcctMasked?`<p class="text-xs bg-amber-50 ring-1 ring-amber-200 text-amber-800 rounded-xl p-3 mb-4">Chỉ chuyển khoản từ tài khoản đã đăng ký: <b>${esc(o.buyerBankName)} ${esc(o.buyerAcctMasked)}</b> (${esc(o.buyerAcctName)}). Tiền đến từ tài khoản khác sẽ bị từ chối và hoàn lại.</p>`:''}
+    <div id="countdown" class="text-center font-mono text-xl font-bold text-amber-600 mb-4">--:--</div>
+    <div class="flex items-center gap-2 text-xs text-navy-400 justify-center mb-4"><span class="w-2 h-2 rounded-full bg-amber-500 pulse"></span>Đang chờ webhook xác nhận từ đối tác…</div>
+    <div class="grid gap-2">${btn('Demo: giả lập đối tác đã nhận tiền thành công','data-act="simPaid" data-id="'+o.id+'"','amber')}${btn('Demo: giả lập tiền đến từ tài khoản KHÁC','data-act="simPaidWrong" data-id="'+o.id+'"','ghost')}</div>
+  `)}</div>`;
+}
+
+function buyerRoom(){ return roomScreen('buyer'); }
+
+function ticketInfoCard(o,role){
+  const dash=v=>v?esc(v):'—';
+  const when=o.eventAt?new Date(o.eventAt).toLocaleString('vi-VN'):'—';
+  return card(`<h3 class="font-extrabold mb-3">Thông tin vé</h3>
+    <dl class="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+      <dt class="text-navy-400">Sự kiện</dt><dd class="font-semibold">${esc(o.itemName)}</dd>
+      <dt class="text-navy-400">Thời gian</dt><dd>${when}</dd>
+      <dt class="text-navy-400">Hạng vé</dt><dd>${esc(o.tier)} · ${o.qty} vé</dd>
+      <dt class="text-navy-400">Nơi phát hành</dt><dd>${dash(o.issuer)}</dd>
+      <dt class="text-navy-400">Hạn chế chuyển giao</dt><dd>${dash(o.transferRestrictions)}</dd>
+      <dt class="text-navy-400">Thời gian kiểm vé</dt><dd>${o.inspectionHours} giờ sau khi nhận vé</dd>
+    </dl>
+    ${o.description?`<p class="text-xs text-navy-500 mt-3">${esc(o.description)}</p>`:''}
+    ${role==='buyer'?`<p class="text-xs text-navy-400 mt-3"><b>Hoàn tiền:</b> ${esc(REFUND_POLICY)}</p>`:''}
+    ${o.review&&o.review.status==='APPROVED'?'<p class="text-[11px] text-navy-300 mt-3">Tin đã qua kiểm tra tính đầy đủ và dấu hiệu rủi ro của PassTic. Đây không phải xác nhận của Ticketbox hay nhà phát hành vé.</p>':''}`);
+}
+function roomScreen(role){
+  const o=orderOf(state.orderId); if(!o) return role==='buyer'?buyerHome():sellerHome();
+  const steps=['CREATED','HOLDING_BY_PARTNER','DELIVERED','COMPLETED'];
+  const idx=o.status==='DISPUTED'||o.status==='REFUNDED'||o.status==='CANCELLED' ? -1 : steps.indexOf(o.status==='WAITING_PAYMENT'?'CREATED':o.status);
+  const stepLabels=['Khởi tạo','Đối tác đã giữ tiền','Người bán đã giao vé','Hoàn tất / Giải ngân'];
+
+  let banner='';
+  if(role==='seller'){
+    if(!o.buyerUserId && o.status==='CREATED') banner=`<div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-sm font-bold px-4 py-3 mb-4">⏳ Chưa có người mua — hãy gửi mã phòng và mật khẩu (ở khung bên phải) cho người mua.</div>`;
+    else if(o.status==='WAITING_PAYMENT'||o.status==='CREATED') banner=`<div class="rounded-xl bg-red-50 ring-1 ring-red-200 text-red-700 text-sm font-bold px-4 py-3 mb-4">⚠ Chưa nhận tiền — Tuyệt đối không giao vé cho người mua.</div>`;
+    else if(o.status==='HOLDING_BY_PARTNER') banner=`<div class="rounded-xl bg-mint-50 ring-1 ring-mint-200 text-mint-700 text-sm font-bold px-4 py-3 mb-4">✓ Đối tác đã giữ ${money(o.buyerTotal)} — Hãy tiến hành gửi vé cho người mua.</div>`;
+  }
+  if(o.status==='DISPUTED') banner=`<div class="rounded-xl bg-red-50 ring-1 ring-red-200 text-red-700 text-sm font-bold px-4 py-3 mb-4">⚖ Giao dịch đang bị khiếu nại — mọi lệnh tự động đã bị khoá, chờ Quản trị viên phân xử.</div>`;
+  if(o.status==='COMPLETED') banner=`<div class="rounded-xl bg-mint-50 ring-1 ring-mint-200 text-mint-700 text-sm font-bold px-4 py-3 mb-4">✓ Giao dịch hoàn tất. Tiền đã được giải ngân cho người bán.</div>`;
+  if(o.status==='REFUNDED') banner=`<div class="rounded-xl bg-slate-100 ring-1 ring-slate-200 text-slate-600 text-sm font-bold px-4 py-3 mb-4">↩ Đã hoàn tiền 100% về người mua theo phán quyết Quản trị viên.</div>`;
+  if(o.status==='CANCELLED') banner=`<div class="rounded-xl bg-slate-100 ring-1 ring-slate-200 text-slate-700 text-sm font-bold px-4 py-3 mb-4">⛔ Tin đã được gỡ${o.cancel&&o.cancel.reason?': '+esc(o.cancel.reason):''}${o.review&&o.review.status==='REJECTED'?' — PassTic từ chối tin: '+esc(o.review.reason||''):''}.</div>`;
+  if(o.status==='REFUNDED'&&o.cancel) banner=`<div class="rounded-xl bg-slate-100 ring-1 ring-slate-200 text-slate-700 text-sm font-bold px-4 py-3 mb-4">↩ Người bán đã huỷ giao dịch trước khi bàn giao${o.cancel.reason?' ('+esc(o.cancel.reason)+')':''}. Tiền được hoàn về đúng tài khoản người mua đã đăng ký.</div>`;
+  if(role==='seller'&&o.review&&(o.status==='CREATED'||o.status==='WAITING_PAYMENT')){
+    const rv=o.review;
+    if(rv.status==='PENDING') banner=`<div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-sm font-bold px-4 py-3 mb-4">⏳ Tin đang chờ PassTic kiểm tra — người mua chưa vào được phòng.${(rv.reasons||[]).length?'<ul class="list-disc pl-5 mt-1 font-medium">'+rv.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul>':''}</div>`+banner;
+    else if(rv.status==='APPROVED'&&!o.buyerUserId) banner=`<div class="rounded-xl bg-mint-50 ring-1 ring-mint-200 text-mint-700 text-sm font-semibold px-4 py-3 mb-4">✓ Tin đã qua kiểm tra của PassTic (tính đầy đủ và dấu hiệu rủi ro). Đây không phải xác nhận của Ticketbox hay nhà phát hành vé.</div>`+banner;
+  }
+
+  let hearingBlock='';
+  if(o.status==='DISPUTED' && o.hearing && !o.hearing.verdict){
+    const mine = role==='buyer' ? o.hearing.buyerJoined : o.hearing.sellerJoined;
+    hearingBlock = card(`<h3 class="font-extrabold mb-2">⚖ Phiên đối chất với Quản trị viên</h3>
+      <p class="text-sm text-navy-400 mb-3">Quản trị viên đã mời cả hai bên vào một cuộc họp để trình bày. Nếu bạn không xác nhận tham gia trước hạn, bên còn lại có thể được xử thắng.</p>
+      <a href="${esc(o.hearing.meetLink)}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-xl bg-navy-800 text-white px-4 py-2.5 text-sm font-bold mb-3">🎥 Tham gia Google Meet</a>
+      <div class="text-sm mb-3">Hạn chót tham gia: <b id="hearingTimer" class="font-mono"></b></div>
+      ${mine?'<p class="text-sm font-semibold text-mint-700">✓ Bạn đã xác nhận tham gia.</p>':btn('✓ Tôi đã vào cuộc họp','data-act="joinHearing" data-id="'+o.id+'"')}
+    `,'mb-4');
+  }
+
+  let adminBlock='';
+  {
+    const side=role==='buyer'?'buyer':'seller';
+    const th=(o.adminMsgs&&o.adminMsgs[side])||[];
+    const canReply=o.status==='DISPUTED'||!!(o.review&&o.review.status==='PENDING');
+    if(canReply||th.length){
+      adminBlock=card(`<h3 class="font-extrabold mb-1">💬 Tin nhắn từ Quản trị viên</h3>
+        <p class="text-xs text-navy-400 mb-3">Chỉ bạn và Quản trị viên thấy cuộc trò chuyện này.</p>
+        <div class="max-h-48 overflow-y-auto bg-navy-50 rounded-xl p-3 grid gap-2 content-start ${canReply?'mb-3':''}">${th.map(m=>`<div class="max-w-[85%] ${m.from===side?'ml-auto bg-mint-500 text-white':'bg-white ring-1 ring-navy-100'} rounded-xl px-3 py-2 text-sm">${esc(m.text)}</div>`).join('')||'<p class="text-xs text-navy-300 text-center py-4">Quản trị viên chưa nhắn tin cho bạn.</p>'}</div>
+        ${canReply?`<div class="flex gap-2"><input id="rm-input" class="${inCls}" placeholder="Trả lời Quản trị viên…">${btn('Gửi','data-act="partySendAdmin" data-id="'+o.id+'"')}</div>`:''}`,'mb-4');
+    }
+  }
+
+  let complaintBlock='';
+  if(o.complaint&&o.status==='DISPUTED'){
+    const c=o.complaint;
+    complaintBlock=card(`<h3 class="font-extrabold mb-1">Khiếu nại ${esc(c.id)}</h3>
+      <p class="text-sm text-navy-400">Loại: ${esc(c.category)} · gửi bởi ${c.by==='seller'?'người bán':'người mua'}</p>
+      <p class="text-sm mt-1 font-semibold ${c.ackAt?'text-mint-700':'text-amber-700'}">${c.ackAt?'✓ PassTic đã tiếp nhận lúc '+new Date(c.ackAt).toLocaleString('vi-VN'):'Đã ghi nhận — đang chờ PassTic tiếp nhận.'}</p>
+      <p class="text-xs text-navy-400 mt-2">Giao dịch được tạm khoá trong lúc xác minh. PassTic không bao giờ yêu cầu mật khẩu hoặc mã OTP.</p>`,'mb-4');
+  }
+  let resolutionBlock='';
+  if(o.resolution){
+    const r=o.resolution, ap=o.appeal;
+    resolutionBlock=card(`<h3 class="font-extrabold mb-2">⚖ Kết quả xử lý khiếu nại</h3>
+      <p class="font-bold">${resolutionLabel(r)}</p>
+      <p class="text-sm mt-1"><b>Căn cứ &amp; hướng xử lý:</b> ${esc(r.basis||'—')}</p>
+      <p class="text-xs text-navy-400 mt-1">${new Date(r.at).toLocaleString('vi-VN')}</p>
+      ${ap?`<div class="mt-3 rounded-xl bg-navy-50 p-3 text-sm">${ap.by===role?`<b>Bạn đã gửi yêu cầu xem xét lại</b> (${new Date(ap.at).toLocaleString('vi-VN')}): ${esc(ap.text)}`:'Đã có yêu cầu xem xét lại từ bên còn lại.'}</div>`
+        :`<div class="mt-3">${field('Bổ sung thông tin / khiếu nại lại',`<textarea id="ap-text" class="${inCls} min-h-[64px]" placeholder="Nêu thông tin bổ sung hoặc lý do bạn không đồng ý…"></textarea>`)}${btn('Gửi yêu cầu xem xét lại','data-act="partyAppeal" data-id="'+o.id+'"','ghost')}</div>`}`,'mb-4');
+  }
+
+  const stepperHtml=`<ol class="grid gap-5 mb-5">${stepLabels.map((l,i)=>{
+    const done=idx>i, cur=idx===i, dis=o.status==='DISPUTED'||o.status==='REFUNDED'||o.status==='CANCELLED';
+    const dot=dis?'bg-slate-300 text-slate-500':(done?'bg-mint-500 text-white':cur?'bg-amber-500 text-white':'bg-navy-100 text-navy-400');
+    return `<li class="step-line flex gap-3"><span class="w-10 h-10 shrink-0 rounded-full grid place-items-center font-extrabold ${dot}">${done?'✓':i+1}</span>
+      <div class="pt-1.5"><div class="font-bold ${cur&&!dis?'text-amber-700':''}">${l}</div>${cur&&!dis?'<div class="text-xs text-navy-400">Đang ở bước này</div>':''}</div></li>`;
+  }).join('')}</ol>`;
+
+  const inspectEnd=o.deliveredAt?o.deliveredAt+o.inspectionHours*3600*1000:null;
+
+  let actions='';
+  if(role==='buyer' && (o.status==='CREATED'||o.status==='WAITING_PAYMENT')){
+    actions=`<div class="mt-4">${btn('Tiến hành thanh toán','data-go="payment" data-id="'+o.id+'"')}</div>`;
+  }
+  if(role==='buyer' && o.status==='DELIVERED'){
+    actions=`<div class="grid sm:grid-cols-2 gap-2 mt-4">
+      ${btn('✓ Xác nhận đã nhận vé đúng mô tả','data-act="confirmReceived" data-id="'+o.id+'"')}
+      ${btn('Khiếu nại / Đóng băng giao dịch','data-act="openDispute" data-id="'+o.id+'"','danger')}</div>
+      ${inspectEnd?`<p class="text-xs text-navy-400 mt-2">Hãy kiểm tra vé trong tài khoản/hệ thống chính thức. Nếu bạn không xác nhận hoặc khiếu nại, giao dịch tự hoàn tất sau <b id="autoTimer" class="mono"></b>.</p>`:''}`;
+  }
+  if(role==='seller' && o.status==='HOLDING_BY_PARTNER'){
+    actions=`<div class="mt-4">${btn('Xác nhận đã giao vé','data-act="openDeliverForm" data-id="'+o.id+'"','navy')}</div>`;
+  }
+  if(role==='seller' && (o.status==='WAITING_PAYMENT'||o.status==='CREATED')){
+    actions=`<p class="text-xs text-navy-400 mt-4">${o.buyerUserId?'Chờ người mua thanh toán để hệ thống kích hoạt bước giao vé.':'Chờ người mua nhập mã phòng và mật khẩu để tham gia.'}</p>`;
+  }
+  {
+    const canComplain=(o.status==='HOLDING_BY_PARTNER'||o.status==='DELIVERED')&&!(role==='buyer'&&o.status==='DELIVERED');
+    const canCancel=role==='seller'&&(o.status==='CREATED'||o.status==='WAITING_PAYMENT'||o.status==='HOLDING_BY_PARTNER');
+    if(canComplain||canCancel){
+      actions+=`<div class="flex gap-2 flex-wrap mt-3">${canComplain?btn('Báo vấn đề / Khiếu nại','data-act="openDispute" data-id="'+o.id+'"','ghost'):''}${canCancel?btn('Gỡ tin / huỷ giao dịch','data-act="openCancel" data-id="'+o.id+'"','ghost'):''}</div>`;
+    }
+  }
+
+  return `<button data-go="${role==='buyer'?'home':'sellerOrders'}" class="text-sm font-semibold text-navy-400 mb-3">← Danh sách phòng</button>
+  <div class="flex items-start justify-between gap-3 flex-wrap mb-4">
+    <div><h1 class="text-xl font-extrabold">${esc(o.itemName)} <span class="text-navy-300 font-medium">· ${esc(o.tier)} · ${o.qty} vé</span></h1>
+      <p class="text-xs text-navy-400 mono mt-1">Mã phòng: ${esc(o.roomCode)} · ${esc(o.id)}</p></div>
+    ${badge(o.status)}</div>
+  <div class="grid lg:grid-cols-[1fr_320px] gap-5">
+    <div>
+      ${banner}
+      ${complaintBlock}
+      ${hearingBlock}
+      ${adminBlock}
+      ${resolutionBlock}
+      ${card(stepperHtml+actions)}
+      <div class="mt-4">${card(`
+        <h3 class="font-extrabold mb-3">Trao đổi & bằng chứng</h3>
+        <div id="chatlog" class="h-56 overflow-y-auto bg-navy-50 rounded-xl p-3 grid gap-2 mb-3">
+          ${(o.messages||[]).map(m=>`<div class="max-w-[80%] ${m.from===role?'ml-auto bg-mint-500 text-white':'bg-white ring-1 ring-navy-100'} rounded-xl px-3 py-2 text-sm">${esc(m.text)}</div>`).join('')||'<p class="text-xs text-navy-300 text-center pt-16">Chưa có tin nhắn.</p>'}
+        </div>
+        ${o.evidences&&o.evidences.length?`<div class="flex flex-wrap gap-2 mb-3">${o.evidences.map(e=>`<span class="text-xs bg-navy-100 text-navy-600 rounded-lg px-2.5 py-1">📎 ${esc(e)}</span>`).join('')}</div>`:''}
+        <div class="flex gap-2"><input id="chatin" class="${inCls}" placeholder="Nhắn tin…">
+        <label class="rounded-xl ring-1 ring-navy-100 w-11 grid place-items-center cursor-pointer shrink-0" title="Đính kèm ảnh/video"><input type="file" id="chatfile2" class="hidden" data-act="attach" data-id="${o.id}">📎</label>
+        ${btn('Gửi','data-act="sendChat" data-id="'+o.id+'"')}</div>
+      `)}</div>
+    </div>
+    <aside class="grid gap-4">
+      ${ticketInfoCard(o,role)}
+      ${card(`<h3 class="font-extrabold mb-3">Tóm tắt thanh toán</h3>
+        <div class="grid gap-1.5 text-sm">
+          <div class="flex justify-between"><span class="text-navy-400">Giá trị đơn</span><b>${money(o.amount)}</b></div>
+          <div class="flex justify-between"><span class="text-navy-400">Phí (${o.feePayer==='BUYER'?'người mua chịu':o.feePayer==='SELLER'?'người bán chịu':'chia đôi'})</span><b>${money(o.feeTotal)}</b></div>
+          <div class="h-px bg-navy-100 my-1"></div>
+          <div class="flex justify-between"><span class="font-bold">Người mua trả</span><b>${money(o.buyerTotal)}</b></div>
+          <div class="flex justify-between"><span class="font-bold">Người bán nhận</span><b>${money(o.sellerReceive)}</b></div>
+        </div>
+        ${o.partnerTxId?`<p class="text-xs text-navy-300 mt-3 mono">Mã giao dịch đối tác: ${esc(o.partnerTxId)}</p>`:''}`)}
+      ${role==='seller' && !o.buyerUserId ? card(`<h3 class="font-extrabold mb-2">Mời người mua</h3>
+        <p class="text-xs text-navy-400 mb-3">Gửi riêng hai thông tin này cho người mua (Zalo, Messenger…).</p>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-navy-50 rounded-xl p-2.5 text-center"><div class="text-[11px] text-navy-400 mb-0.5">Mã phòng</div><div class="font-mono font-extrabold">${esc(o.roomCode)}</div></div>
+          <div class="bg-navy-50 rounded-xl p-2.5 text-center"><div class="text-[11px] text-navy-400 mb-0.5">Mật khẩu</div><div class="font-mono font-extrabold">${esc(o.roomPassword)}</div></div>
+        </div>`) : ''}
+      ${card(`<h3 class="font-extrabold mb-2">Đối tác</h3><p class="text-sm text-navy-400">Người mua: <b class="text-navy-800">${o.buyerName?esc(o.buyerName):'Chưa tham gia'}</b></p><p class="text-sm text-navy-400">Người bán: <b class="text-navy-800">${o.sellerName?esc(o.sellerName):'Chưa tham gia'}</b></p>`)}
+    </aside>
+  </div>`;
+}
+
+/* ================= SCREENS: SELLER ================= */
+function sellerHome(){ return sellerOrders(); }
+function sellerOrders(){
+  const list=myOrders('seller');
+  return `<div class="flex items-center justify-between flex-wrap gap-3 mb-5">
+    <div><h1 class="text-2xl font-extrabold">Đơn bán của bạn</h1><p class="text-navy-400 text-sm">Theo dõi trạng thái giữ tiền và giao vé cho từng đơn.</p></div>
+    <div class="flex gap-2">${btn('Cài đặt nhận tiền','data-go="payout"','ghost')}${btn('+ Tạo phòng mới','data-go="create"')}</div></div>
+  <div class="grid gap-3">${list.length?list.map(o=>roomSummaryRow(o,'seller')).join(''):emptyState('Bạn chưa có đơn bán nào. Bấm "+ Tạo phòng mới" để đăng vé và nhận mã mời người mua.')}</div>`;
+}
+function sellerPayout(){
+  const p=mySellerPayout||{};
+  return `<button data-go="sellerOrders" class="text-sm font-semibold text-navy-400 mb-3">← Đơn bán</button>
+  <h1 class="text-2xl font-extrabold mb-1">Cài đặt tài khoản nhận tiền</h1>
+  <p class="text-navy-400 text-sm mb-5">Thông tin này chỉ mình bạn thấy được, dùng để cổng thanh toán đối tác giải ngân tự động khi giao dịch hoàn tất.</p>
+  <div class="max-w-lg">${card(`
+    ${field('Ngân hàng / Ví điện tử',`<select id="p-bank" class="${inCls}"><option ${p.bank==='MoMo'?'selected':''}>MoMo</option><option ${p.bank==='Vietcombank'?'selected':''}>Vietcombank</option><option ${p.bank==='ACB'?'selected':''}>ACB</option><option ${p.bank==='Techcombank'?'selected':''}>Techcombank</option></select>`)}
+    ${field('Số tài khoản / số điện thoại ví',`<input id="p-no" class="${inCls}" value="${esc(p.no||'')}">`)}
+    <div class="flex gap-2 items-end mb-4">
+      <div class="flex-1">${field('Tên chủ tài khoản',`<input id="p-name" class="${inCls}" value="${esc(p.name||'')}" placeholder="Bấm kiểm tra để tự điền">`)}</div>
+      ${btn('Kiểm tra tên','data-act="checkAccName"','navy')}
+    </div>
+    ${p.verified?`<p class="text-sm text-mint-700 font-semibold mb-3">✓ Đã xác minh chủ tài khoản: ${esc(p.name)}</p>`:''}
+    ${btn('Lưu thông tin nhận tiền','data-act="savePayout"')}
+  `)}</div>`;
+}
+function openDeliverModal(id){
+  const o=orderOf(id);
+  openModal(`<form id="deliverForm" class="p-6">
+    <h3 class="font-extrabold text-lg mb-1">Xác nhận đã giao vé</h3>
+    <p class="text-sm text-navy-400 mb-4">${esc(o.itemName)} · ${esc(o.tier)}</p>
+    <p class="text-xs bg-navy-50 rounded-xl p-3 mb-4 text-navy-600">Hãy chuyển nhượng/tặng vé trên hệ thống chính thức của nhà phát hành (nếu có) và làm theo hướng dẫn để người mua nhận vé, rồi xác nhận tại đây. Không gửi mật khẩu hay mã OTP của bất kỳ tài khoản nào.</p>
+    ${field('Mã / thông tin thao tác chuyển giao (nếu có)',`<input id="dv-code" class="${inCls}" placeholder="VD: TB-884213">`)}
+    ${field('Bằng chứng bàn giao',`<input id="dv-file" type="file" class="${inCls}">`,'Ảnh chụp màn hình thao tác chuyển giao (che dữ liệu nhạy cảm).')}
+    <div class="flex gap-2 justify-end mt-2">${btn('Huỷ','type="button" data-act="closeModal"','ghost')}${btn('Xác nhận đã giao','type="submit" data-id="'+id+'"')}</div>
+  </form>`);
+}
+function resolutionLabel(r){ return r.winner==='buyer'?'Người mua thắng (hoàn tiền)':r.winner==='seller'?'Người bán thắng (giải ngân)':`Chia tỷ lệ (${r.pct}% hoàn người mua)`; }
+function openDisputeModal(id){
+  const o=orderOf(id); const phone=state.role==='buyer'?state.buyerPhone:state.sellerPhone;
+  openModal(`<form id="disputeForm" class="p-6 max-h-[85vh] overflow-y-auto">
+    <h3 class="font-extrabold text-lg mb-1 text-red-700">Khiếu nại giao dịch</h3>
+    <p class="text-sm text-navy-400 mb-3">Mã giao dịch: <b class="font-mono">${esc(o.id)}</b>. Giao dịch sẽ được tạm khoá trong lúc PassTic xác minh.</p>
+    ${field('Loại vấn đề',`<select id="dp-cat" class="${inCls}">${COMPLAINT_CATS.map(c=>`<option>${c}</option>`).join('')}</select>`)}
+    ${field('Thời điểm phát sinh',`<input id="dp-when" type="datetime-local" class="${inCls}">`)}
+    ${field('Thông tin liên hệ',`<input id="dp-contact" class="${inCls}" value="${esc(phone||'')}" placeholder="SĐT hoặc email">`)}
+    ${field('Mô tả vấn đề',`<textarea id="dp-reason" class="${inCls} min-h-[84px]" placeholder="Mô tả vấn đề bạn gặp phải…"></textarea>`)}
+    ${field('Tài liệu chứng minh',`<input id="dp-file" type="file" class="${inCls}">`,'Hãy che dữ liệu nhạy cảm. PassTic không bao giờ yêu cầu mật khẩu hoặc mã OTP.')}
+    <p class="text-xs text-navy-400 mb-3">Bạn cũng có thể gửi khiếu nại qua email <b>${SUPPORT_EMAIL}</b> kèm mã giao dịch ở trên.</p>
+    <div class="flex gap-2 justify-end mt-2">${btn('Huỷ','type="button" data-act="closeModal"','ghost')}${btn('Gửi khiếu nại','type="submit" data-id="'+id+'"','danger')}</div>
+  </form>`);
+}
+function openReceiveModal(id){
+  openModal(`<div class="p-6">
+    <h3 class="font-extrabold text-lg mb-1">Xác nhận đã nhận vé</h3>
+    <p class="text-sm text-navy-400 mb-4">Hãy kiểm tra vé trong tài khoản/hệ thống chính thức của nhà phát hành trước khi xác nhận. Xác nhận sẽ kích hoạt giải ngân cho người bán và không thể hoàn tác. Bạn không cần nhập mật khẩu hay mã OTP nào.</p>
+    <label class="flex gap-2 items-start text-sm mb-4"><input id="rc-ack" type="checkbox" class="mt-1"><span>Tôi đã nhận được vé trong tài khoản/hệ thống chính thức và vé đúng mô tả.</span></label>
+    <div class="flex gap-2 justify-end">${btn('Huỷ','data-act="closeModal"','ghost')}${btn('Xác nhận & giải ngân','data-act="submitReceive" data-id="'+id+'"')}</div>
+  </div>`);
+}
+function openCancelModal(id){
+  const o=orderOf(id); const paid=o.status==='HOLDING_BY_PARTNER';
+  openModal(`<div class="p-6">
+    <h3 class="font-extrabold text-lg mb-1">Gỡ tin / huỷ giao dịch</h3>
+    <p class="text-sm text-navy-400 mb-4">${paid?'Người mua đã thanh toán — nếu bạn huỷ, tiền được hoàn 100% về đúng tài khoản người mua đã đăng ký.':'Tin sẽ bị gỡ và người mua không thể tham gia nữa.'}</p>
+    ${field('Lý do',`<select id="cx-reason" class="${inCls}"><option>Vé không còn khả dụng</option><option>Điều kiện chuyển giao đã thay đổi</option><option>Tôi đã bán vé ở nơi khác</option><option>Lý do khác</option></select>`)}
+    <div class="flex gap-2 justify-end">${btn('Quay lại','data-act="closeModal"','ghost')}${btn('Xác nhận gỡ tin','data-act="submitCancel" data-id="'+id+'"','danger')}</div>
+  </div>`);
+}
+function openJoinModal(role){
+  openModal(`<div class="p-6"><h3 class="font-extrabold text-lg mb-3">${role==='buyer'?'Vào phòng bằng mã':'Tham gia phòng giao dịch'}</h3>
+  <p class="text-xs text-navy-400 mb-3">Nhập đúng mã phòng và mật khẩu mà đối tác giao dịch đã chia sẻ với bạn.</p>
+  ${field('Mã phòng',`<input id="jm-code" class="${inCls}" placeholder="VD: AB12C">`)}
+  ${field('Mật khẩu phòng',`<input id="jm-pass" type="password" class="${inCls}">`)}
+  <div class="flex gap-2 justify-end">${btn('Huỷ','data-act="closeModal"','ghost')}${btn('Vào phòng','data-act="doJoin2" data-role="'+role+'"')}</div></div>`);
+  setTimeout(()=>$('#jm-code')&&$('#jm-code').focus(),0);
+}
+function openAdminPasscode(){
+  openModal(`<div class="p-6"><h3 class="font-extrabold text-lg mb-1">Khu vực hạn chế</h3><p class="text-sm text-navy-400 mb-4">Nhập mã truy cập Quản trị viên.</p>
+  <input id="adm-code" class="${inCls} mb-4 text-center font-mono tracking-widest" placeholder="Mã truy cập">
+  <div class="flex gap-2 justify-end">${btn('Huỷ','data-act="closeModal"','ghost')}${btn('Xác nhận','data-act="submitAdminCode"')}</div></div>`);
+  setTimeout(()=>$('#adm-code')&&$('#adm-code').focus(),0);
+}
+
+/* ================= SCREENS: ADMIN ================= */
+function adminOverview(){
+  const active=orders.filter(o=>o.status==='HOLDING_BY_PARTNER'||o.status==='DELIVERED');
+  const activeVol=active.reduce((s,o)=>s+o.buyerTotal,0);
+  const disputed=orders.filter(o=>o.status==='DISPUTED');
+  const revenue=orders.filter(o=>o.status==='COMPLETED'||o.status==='DISPUTED'||o.status==='REFUNDED').reduce((s,o)=>s+o.platformFee,0);
+  const stat=(label,val,sub,color)=>`<div class="bg-white rounded-2xl shadow-card p-5"><div class="text-xs font-bold text-navy-400 uppercase tracking-wide mb-2">${label}</div><div class="text-2xl font-extrabold ${color||''}">${val}</div>${sub?`<div class="text-xs text-navy-400 mt-1">${sub}</div>`:''}</div>`;
+  return `<h1 class="text-2xl font-extrabold mb-1">Tổng quan hệ thống</h1><p class="text-navy-400 text-sm mb-5">Đối soát dòng tiền đang được đối tác thanh toán giữ hộ.</p>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    ${stat('Đang được đối tác giữ hộ',money(activeVol),active.length+' phòng')}
+    ${stat('Tổng số phòng',orders.length,'')}
+    ${stat('Đang khiếu nại',disputed.length,disputed.length?'Cần xử lý':'Không có',disputed.length?'text-red-600':'text-mint-600')}
+    ${stat('Doanh thu phí thực nhận',money(revenue),'')}
+  </div>
+  <div class="flex items-center justify-between mb-3"><h2 class="font-extrabold text-lg">Log API &amp; Webhook</h2><span class="text-xs text-navy-400">Chữ ký HMAC-SHA256 được xác minh cho mọi bản tin</span></div>
+  <div class="bg-white rounded-2xl shadow-card overflow-hidden scrollx">
+    <table class="w-full text-sm min-w-[640px]">
+      <thead class="bg-navy-50 text-navy-500 text-xs uppercase"><tr><th class="text-left px-4 py-2.5">Thời gian</th><th class="text-left px-4 py-2.5">Đơn</th><th class="text-left px-4 py-2.5">Đối tác</th><th class="text-left px-4 py-2.5">Loại</th><th class="text-left px-4 py-2.5">Trạng thái</th><th class="text-left px-4 py-2.5">Chữ ký</th></tr></thead>
+      <tbody>${webhookLog.slice(0,12).map(e=>`<tr class="border-t border-navy-50"><td class="px-4 py-2.5 mono text-navy-400">${new Date(e.ts).toLocaleTimeString('vi-VN')}</td><td class="px-4 py-2.5 mono">${esc(e.orderId)}</td><td class="px-4 py-2.5">${esc(e.partner)}</td><td class="px-4 py-2.5">${e.type}</td><td class="px-4 py-2.5"><span class="text-xs font-bold px-2 py-0.5 rounded-full ${e.status==='SUCCESS'?'bg-mint-100 text-mint-700':'bg-red-100 text-red-700'}">${e.status}</span></td><td class="px-4 py-2.5 text-mint-600 font-semibold">✓ Hợp lệ</td></tr>`).join('')||`<tr><td colspan="6" class="px-4 py-8 text-center text-navy-300">Chưa có sự kiện nào.</td></tr>`}</tbody>
+    </table>
+  </div>`;
+}
+function adminDisputes(){
+  const list=orders.filter(o=>o.status==='DISPUTED');
+  return `<h1 class="text-2xl font-extrabold mb-1">Trung tâm xử lý tranh chấp</h1><p class="text-navy-400 text-sm mb-5">${list.length} đơn đang chờ phân xử.</p>
+  <div class="grid gap-3">${list.length?list.map(o=>`<button data-go="transactionDetail" data-id="${o.id}" class="w-full text-left bg-white rounded-2xl shadow-card p-4 flex items-center gap-4 hover:ring-2 hover:ring-red-300 transition">
+    <div class="w-11 h-11 rounded-xl bg-red-100 text-red-600 grid place-items-center font-extrabold">⚖</div>
+    <div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(o.itemName)} · ${esc(o.tier)}</div><div class="text-xs text-navy-400">Mua: ${esc(o.buyerName||'—')} · Bán: ${esc(o.sellerName||'—')}</div></div>
+    <div class="font-extrabold">${money(o.amount)}</div></button>`).join(''):emptyState('Không có tranh chấp nào đang mở.')}</div>`;
+}
+function adminTransactions(){
+  const all=orders.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const f=state.txFilter||'all';
+  const nRev=all.filter(o=>o.review&&o.review.status==='PENDING').length, nDis=all.filter(o=>o.status==='DISPUTED'||o.appeal).length;
+  const list=f==='review'?all.filter(o=>o.review&&o.review.status==='PENDING'):f==='dispute'?all.filter(o=>o.status==='DISPUTED'||o.appeal):all;
+  return `<h1 class="text-2xl font-extrabold mb-1">Tất cả giao dịch</h1><p class="text-navy-400 text-sm mb-5">${list.length} giao dịch đã từng được tạo trong hệ thống — bấm vào từng dòng để xem chi tiết đầy đủ.</p>
+  <div class="flex gap-2 flex-wrap mb-4">${[['all','Tất cả ('+all.length+')'],['review','Chờ duyệt tin ('+nRev+')'],['dispute','Khiếu nại / kháng nghị ('+nDis+')']].map(([k,l])=>`<button type="button" data-act="setTxFilter" data-f="${k}" class="px-3 py-1.5 rounded-lg text-sm font-semibold ${f===k?'bg-navy-800 text-white':'bg-white ring-1 ring-navy-100 text-navy-700'}">${l}</button>`).join('')}</div>
+  <div class="grid gap-3">${list.length?list.map(o=>`<button data-go="transactionDetail" data-id="${o.id}" class="w-full text-left bg-white rounded-2xl shadow-card p-4 flex items-center gap-4 hover:ring-2 hover:ring-navy-300 transition">
+    <div class="w-11 h-11 rounded-xl bg-navy-800 text-white grid place-items-center font-extrabold text-sm shrink-0">${esc(o.itemName.slice(0,1)||'V')}</div>
+    <div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(o.itemName)} · ${esc(o.tier)}</div><div class="text-xs text-navy-400 mono">${esc(o.id)} · Mua: ${esc(o.buyerName||'—')} · Bán: ${o.sellerName?esc(o.sellerName):'chưa tham gia'}</div></div>
+    <div class="text-right shrink-0"><div class="font-extrabold">${money(o.amount)}</div>${badge(o.status)}${o.review&&o.review.status==='PENDING'?'<div class="text-[11px] font-bold text-amber-700 mt-1">⏳ Chờ duyệt tin</div>':''}${o.appeal?'<div class="text-[11px] font-bold text-amber-700 mt-1">↻ Có kháng nghị</div>':''}${riskFlags(o).length?'<div class="text-[11px] font-bold text-red-600 mt-1">⚠ '+riskFlags(o).length+' cảnh báo</div>':''}</div></button>`).join(''):emptyState('Chưa có giao dịch thật nào trong hệ thống — hãy tạo một phòng ở vai Người bán rồi tham gia bằng tài khoản khác ở vai Người mua để có dữ liệu test.')}</div>`;
+}
+function partiesCard(o){
+  const dash=v=>v?esc(v):'<span class="text-navy-300">—</span>';
+  const tel=ph=>ph?`<a href="tel:${esc(ph)}" class="underline font-mono font-semibold">${esc(ph)}</a>`:'<span class="text-navy-300">—</span>';
+  const side=(title,name,phone,bank,no,accName,uid)=>`<div class="bg-navy-50 rounded-xl p-4">
+    <h4 class="font-extrabold mb-2">${title}</h4>
+    <dl class="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+      <dt class="text-navy-400">Tên hiển thị</dt><dd>${dash(name)}</dd>
+      <dt class="text-navy-400">Số điện thoại</dt><dd>${tel(phone)}</dd>
+      <dt class="text-navy-400">Ngân hàng/ví</dt><dd>${dash(bank)}</dd>
+      <dt class="text-navy-400">Số tài khoản</dt><dd class="font-mono font-semibold">${dash(no)}</dd>
+      <dt class="text-navy-400">Tên chủ TK</dt><dd>${dash(accName)}</dd>
+      <dt class="text-navy-400">Mã người dùng</dt><dd class="font-mono text-xs break-all">${dash(uid)}</dd>
+    </dl></div>`;
+  return card(`<h3 class="font-extrabold mb-3">Thông tin hai bên</h3><div class="grid lg:grid-cols-2 gap-4">
+    ${side('Người mua',o.buyerName,o.buyerPhone,o.buyerBankName,o.buyerAcctNo||o.buyerAcctMasked,o.buyerAcctName,o.buyerUserId)}
+    ${side('Người bán',o.sellerName,o.sellerPhone,o.sellerBankName,o.sellerAcctNo||o.sellerAcctMasked,o.sellerAcctName,o.sellerUserId)}
+  </div>`,'mb-5');
+}
+function riskFlags(o){
+  const flags=[]; const bh=o.buyerAcctHash, sh=o.sellerAcctHash;
+  if(bh&&sh&&bh===sh) flags.push({lv:'high',t:'Người mua và người bán dùng cùng một tài khoản ngân hàng.'});
+  const usersOf=hh=>{ const s=new Set(); orders.forEach(x=>{ if(x.buyerAcctHash===hh&&x.buyerUserId) s.add(x.buyerUserId); if(x.sellerAcctHash===hh&&x.sellerUserId) s.add(x.sellerUserId); }); return s; };
+  [['người mua',bh,o.buyerAcctMasked],['người bán',sh,o.sellerAcctMasked]].forEach(([who,hh,m])=>{
+    if(!hh) return;
+    const n=usersOf(hh).size;
+    if(n>1) flags.push({lv:'high',t:`Tài khoản ${m} của ${who} được ${n} tài khoản người dùng khác nhau sử dụng.`});
+    const recent=orders.filter(x=>(x.buyerAcctHash===hh||x.sellerAcctHash===hh)&&(Date.now()-(x.createdAt||0))<24*3600e3).length;
+    if(recent>=3) flags.push({lv:'warn',t:`Tài khoản ${m} của ${who} xuất hiện trong ${recent} giao dịch trong 24 giờ qua.`});
+    if(orders.some(x=>x.buyerAcctHash===hh)&&orders.some(x=>x.sellerAcctHash===hh)) flags.push({lv:'warn',t:`Tài khoản ${m} của ${who} từng là cả bên mua lẫn bên bán (tiền vào và ra cùng một tài khoản).`});
+  });
+  if(o.buyerAcctName&&o.sellerAcctName&&o.buyerAcctName===o.sellerAcctName&&bh!==sh) flags.push({lv:'warn',t:'Hai bên có cùng tên chủ tài khoản nhưng khác số tài khoản.'});
+  return flags;
+}
+function accountRiskCard(o){
+  const fl=riskFlags(o);
+  const acct=(b,m,n)=>m?`${esc(b)} <span class="font-mono">${esc(m)}</span> — ${esc(n)}`:'<span class="text-navy-300">Chưa đăng ký</span>';
+  return card(`<h3 class="font-extrabold mb-3">Kiểm tra rủi ro tài khoản ngân hàng</h3>
+    ${fl.length?`<div class="grid gap-2">${fl.map(f=>`<div class="rounded-xl text-sm font-semibold px-3 py-2 ${f.lv==='high'?'bg-red-50 ring-1 ring-red-200 text-red-700':'bg-amber-50 ring-1 ring-amber-200 text-amber-800'}">${f.lv==='high'?'⛔':'⚠'} ${esc(f.t)}</div>`).join('')}</div>`:'<p class="text-sm font-semibold text-mint-700">✓ Không phát hiện dấu hiệu bất thường trong dữ liệu hiện có.</p>'}`,'mb-5');
+}
+function reviewPanel(o){
+  if(!o.review&&!o.eventAt) return '';
+  const rv=o.review||{}; const fT=t=>t?new Date(t).toLocaleString('vi-VN'):'—';
+  const bd={APPROVED:['Đã duyệt','bg-mint-100 text-mint-700'],PENDING:['Chờ duyệt','bg-amber-100 text-amber-700'],REJECTED:['Bị từ chối','bg-red-100 text-red-700']}[rv.status]||['Chưa kiểm tra','bg-slate-200 text-slate-600'];
+  return card(`<div class="flex items-center justify-between gap-2 mb-3"><h3 class="font-extrabold">Tin đăng &amp; kiểm tra tin</h3><span class="text-xs font-bold px-2.5 py-1 rounded-full ${bd[1]}">${bd[0]}</span></div>
+    <dl class="grid grid-cols-[170px_1fr] gap-y-2 text-sm mb-3">
+      <dt class="text-navy-400">Thời gian sự kiện</dt><dd>${fT(o.eventAt)}</dd>
+      <dt class="text-navy-400">Nơi phát hành</dt><dd>${o.issuer?esc(o.issuer):'—'}</dd>
+      <dt class="text-navy-400">Hạn chế chuyển giao</dt><dd>${o.transferRestrictions?esc(o.transferRestrictions):'—'}</dd>
+      <dt class="text-navy-400">Người bán xác nhận đủ điều kiện</dt><dd>${fT(o.eligibilityConfirmedAt)}</dd>
+      <dt class="text-navy-400">Kiểm tra tự động lúc</dt><dd>${fT(rv.checkedAt)}</dd>
+    </dl>
+    ${(rv.reasons||[]).length?`<div class="grid gap-1.5 mb-3">${rv.reasons.map(r=>`<div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-sm font-semibold px-3 py-2">⚠ ${esc(r)}</div>`).join('')}</div>`:''}
+    ${rv.status==='REJECTED'&&rv.reason?`<p class="text-sm text-red-700 font-semibold mb-3">Lý do từ chối: ${esc(rv.reason)}</p>`:''}
+    ${rv.status==='PENDING'?`${field('Ghi chú / nội dung cần bổ sung / lý do từ chối',`<textarea id="rv-note" class="${inCls} min-h-[64px]" placeholder="Dùng cho 'Yêu cầu bổ sung' hoặc 'Từ chối'…"></textarea>`)}
+      <div class="grid sm:grid-cols-3 gap-2">${btn('Duyệt tin','data-act="approveListing" data-id="'+o.id+'"')}${btn('Yêu cầu bổ sung bằng chứng','data-act="requestEvidence" data-id="'+o.id+'"','navy')}${btn('Từ chối tin','data-act="rejectListing" data-id="'+o.id+'"','danger')}</div>`:''}
+    <p class="text-[11px] text-navy-300 mt-3">Kiểm tra này không phải xác nhận của Ticketbox hay nhà phát hành vé.</p>`,'mb-5');
+}
+function complaintCard(o,fmt){
+  if(!o.complaint) return '';
+  const c=o.complaint;
+  return card(`<div class="flex items-center justify-between gap-2 mb-3"><h3 class="font-extrabold">Khiếu nại ${esc(c.id)}</h3>${c.ackAt?'<span class="text-xs font-bold px-2.5 py-1 rounded-full bg-mint-100 text-mint-700">Đã tiếp nhận</span>':'<span class="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Chờ tiếp nhận</span>'}</div>
+    <dl class="grid grid-cols-[150px_1fr] gap-y-2 text-sm mb-3">
+      <dt class="text-navy-400">Gửi bởi</dt><dd>${c.by==='seller'?'Người bán':'Người mua'}</dd>
+      <dt class="text-navy-400">Loại vấn đề</dt><dd>${esc(c.category)}</dd>
+      <dt class="text-navy-400">Thời điểm phát sinh</dt><dd>${fmt(c.occurredAt)}</dd>
+      <dt class="text-navy-400">Liên hệ</dt><dd>${c.contact?esc(c.contact):'—'}</dd>
+      <dt class="text-navy-400">Gửi lúc</dt><dd>${fmt(c.createdAt)}</dd>
+      <dt class="text-navy-400">Tiếp nhận lúc</dt><dd>${fmt(c.ackAt)}</dd>
+    </dl>
+    ${!c.ackAt&&o.status==='DISPUTED'?btn('Xác nhận đã tiếp nhận & thông báo cho bên khiếu nại','data-act="ackComplaint" data-id="'+o.id+'"','navy'):''}`,'mb-5');
+}
+function resolutionAdmin(o,fmt){
+  if(!o.resolution) return '';
+  const r=o.resolution, ap=o.appeal;
+  const reasonLabel=r.reason==='no_show'?'bên kia vắng mặt quá hạn':r.reason==='admin_split'?'admin chia tỷ lệ':'quyết định của admin';
+  return card(`<h3 class="font-extrabold mb-2">Kết quả xử lý khiếu nại</h3>
+    <p class="font-bold">${resolutionLabel(r)} <span class="text-sm font-medium text-navy-400">— do ${reasonLabel}, ${fmt(r.at)}</span></p>
+    <p class="text-sm mt-1"><b>Căn cứ &amp; hướng xử lý:</b> ${esc(r.basis||'—')}</p>
+    ${ap?`<div class="mt-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-sm px-3 py-2"><b>Yêu cầu xem xét lại từ ${ap.by==='seller'?'người bán':'người mua'}</b> (${fmt(ap.at)}): ${esc(ap.text)}</div>`:''}`,'mb-5');
+}
+function hearingSummary(o,fmt){
+  if(!o.hearing) return '';
+  const h=o.hearing;
+  const reasonLabel = h.verdictReason==='no_show'?'bên kia vắng mặt quá hạn':h.verdictReason==='admin_split'?'admin chia tỷ lệ':'quyết định của admin sau khi nghe hai bên';
+  return card(`<h3 class="font-extrabold mb-2">Phiên đối chất</h3>
+    <p class="text-sm mb-1">Link họp: ${h.meetLink?`<a href="${esc(h.meetLink)}" target="_blank" rel="noopener" class="underline font-semibold">${esc(h.meetLink)}</a>`:'—'}</p>
+    <p class="text-sm text-navy-400 mb-1">Hẹn lúc: ${fmt(h.scheduledAt)} · Hạn tham gia: ${fmt(h.deadlineAt)}</p>
+    <p class="text-sm text-navy-400 mb-1">Người mua: ${h.buyerJoined?'✓ đã tham gia':'không/chưa tham gia'} · Người bán: ${h.sellerJoined?'✓ đã tham gia':'không/chưa tham gia'}</p>
+    ${h.verdict?`<p class="text-sm font-bold mt-2 ${h.verdict==='buyer'?'text-red-700':'text-mint-700'}">Kết quả: ${h.verdict==='buyer'?'Người mua thắng (hoàn tiền)':h.verdict==='split'?'Chia tỷ lệ':'Người bán thắng (giải ngân)'} — do ${reasonLabel}, lúc ${fmt(h.verdictAt)}</p>`:'<p class="text-sm text-amber-700 font-semibold mt-2">Chưa có phán quyết.</p>'}
+  `,'mb-5');
+}
+function meetTab(o){
+  const h=o.hearing;
+  if(!h){
+    return `<p class="text-xs text-navy-400 mb-4">Tạo cuộc họp Google Meet để nghe cả hai bên trình bày trực tiếp. Nếu chỉ một bên xác nhận tham gia trước hạn, hệ thống sẽ tự xử bên có mặt thắng.</p>
+      <div class="mb-3">${btn('Tạo cuộc họp Google Meet mới (mở tab mới)','type="button" data-act="openMeetNew"','ghost')}</div>
+      ${field('Link Google Meet',`<input id="hr-meet" class="${inCls}" placeholder="https://meet.google.com/xxx-xxxx-xxx">`,'Dán link cuộc họp vừa tạo (hoặc link có sẵn) vào đây.')}
+      ${field('Thời hạn tham gia',`<select id="hr-minutes" class="${inCls}">${[5,10,15,20,30].map(m=>`<option value="${m}" ${m===15?'selected':''}>${m} phút</option>`).join('')}</select>`,'Hết thời gian này mà chỉ một bên xác nhận tham gia, hệ thống sẽ tự xử bên có mặt thắng.')}
+      ${btn('Gửi lời mời & bắt đầu đếm giờ','data-act="scheduleHearing" data-id="'+o.id+'"')}`;
+  }
+  if(h.verdict) return '<p class="text-sm text-navy-400">Phiên họp đã có kết quả — xem mục "Phiên đối chất" bên dưới.</p>';
+  const overdue=h.deadlineAt<=Date.now(), mismatch=h.buyerJoined!==h.sellerJoined;
+  return `<p class="text-sm mb-3"><a href="${esc(h.meetLink)}" target="_blank" rel="noopener" class="text-navy-800 underline font-semibold">🎥 ${esc(h.meetLink)}</a></p>
+    <div class="grid sm:grid-cols-2 gap-3 mb-2 text-sm">
+      <div class="bg-navy-50 rounded-xl p-3"><div class="text-navy-400 text-xs mb-1">Người mua</div><div class="font-bold ${h.buyerJoined?'text-mint-700':'text-navy-400'}">${h.buyerJoined?'✓ Đã tham gia':'Chưa tham gia'}</div></div>
+      <div class="bg-navy-50 rounded-xl p-3"><div class="text-navy-400 text-xs mb-1">Người bán</div><div class="font-bold ${h.sellerJoined?'text-mint-700':'text-navy-400'}">${h.sellerJoined?'✓ Đã tham gia':'Chưa tham gia'}</div></div>
+    </div>
+    ${overdue&&mismatch?`<div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-sm font-semibold px-4 py-3 mt-3 flex items-center justify-between gap-3 flex-wrap">
+      <span>Đã quá hạn, chỉ ${h.buyerJoined?'người mua':'người bán'} tham gia.</span>${btn('Xử lý ngay','data-act="forceNoShow" data-id="'+o.id+'"','amber')}</div>`:''}`;
+}
+function msgTab(o){
+  const t=ts=>new Date(ts).toLocaleString('vi-VN');
+  const col=(side,label,name)=>{
+    const th=(o.adminMsgs&&o.adminMsgs[side])||[];
+    return `<div><h4 class="font-bold text-sm mb-2">${label}: ${esc(name||'—')}</h4>
+      <div class="h-44 overflow-y-auto bg-navy-50 rounded-xl p-3 grid gap-2 content-start mb-2">${th.map(m=>`<div class="max-w-[85%] ${m.from==='admin'?'ml-auto bg-navy-800 text-white':'bg-white ring-1 ring-navy-100'} rounded-xl px-3 py-2 text-sm">${esc(m.text)}<div class="text-[10px] opacity-60 mt-0.5">${t(m.ts)}</div></div>`).join('')||'<p class="text-xs text-navy-300 text-center pt-14">Chưa có tin nhắn.</p>'}</div>
+      <div class="flex gap-2"><input id="am-${side}" class="${inCls}" placeholder="Nhắn cho ${label.toLowerCase()}…">${btn('Gửi','data-act="adminSend" data-side="'+side+'" data-id="'+o.id+'"')}</div></div>`;
+  };
+  return `<p class="text-xs text-navy-400 mb-4">Nhắn riêng cho từng bên ngay trên nền tảng. Họ thấy tin nhắn trong phòng giao dịch của mình và trả lời tại đó. Hai bên không thấy tin nhắn của nhau. Không yêu cầu mật khẩu hay mã OTP.</p>
+    <div class="grid lg:grid-cols-2 gap-4">${col('buyer','Người mua',o.buyerName)}${col('seller','Người bán',o.sellerName)}</div>`;
+}
+function callTab(o){
+  const t=ts=>new Date(ts).toLocaleString('vi-VN');
+  const outcomes=['Đã liên lạc được','Không nghe máy','Sai số / không liên lạc được','Hẹn gọi lại sau'];
+  const col=(side,label,name,phone)=>{
+    const hist=(o.calls&&o.calls[side])||[];
+    return `<div class="bg-navy-50 rounded-xl p-3"><h4 class="font-bold text-sm mb-1">${label}: ${esc(name||'—')}</h4>
+      <p class="text-sm mb-3">${phone?`<a class="underline font-mono font-semibold" href="tel:${esc(phone)}">📞 ${esc(phone)}</a>`:'<span class="text-navy-300">Chưa có số điện thoại</span>'}</p>
+      <div class="grid gap-1.5 mb-3 text-xs">${hist.map(c=>`<div class="bg-white rounded-lg px-2.5 py-1.5"><b>${esc(c.outcome)}</b> · ${t(c.ts)}${c.note?`<div class="text-navy-500 mt-0.5">${esc(c.note)}</div>`:''}</div>`).join('')||'<span class="text-navy-300">Chưa có nhật ký cuộc gọi.</span>'}</div>
+      ${field('Kết quả cuộc gọi',`<select id="call-out-${side}" class="${inCls}">${outcomes.map(x=>`<option>${x}</option>`).join('')}</select>`)}
+      ${field('Nội dung trao đổi',`<textarea id="call-note-${side}" class="${inCls} min-h-[64px]" placeholder="Ghi tóm tắt: bên này nói gì, hứa gì, có bằng chứng gì…"></textarea>`)}
+      ${btn('Lưu nhật ký cuộc gọi','data-act="logCall" data-side="'+side+'" data-id="'+o.id+'"','navy')}</div>`;
+  };
+  return `<p class="text-xs text-navy-400 mb-4">Gọi điện cho từng bên rồi ghi lại kết quả. Nhật ký chỉ admin thấy và được lưu cùng giao dịch. Không yêu cầu mật khẩu hay mã OTP khi gọi.</p>
+    <div class="grid lg:grid-cols-2 gap-4">${col('buyer','Người mua',o.buyerName,o.buyerPhone)}${col('seller','Người bán',o.sellerName,o.sellerPhone)}</div>`;
+}
+function decisionPanel(o){
+  return card(`<h3 class="font-extrabold mb-3">Xác minh vé &amp; phán quyết</h3>
+    ${field('Ghi chú xác minh với nền tảng vé (Ticketbox...)',`<textarea id="pf-notes" class="${inCls} min-h-[84px]" placeholder="VD: Đã gọi Ticketbox, vé vẫn đứng tên người bán, chưa có lệnh resale nào...">${esc(o.platformCheckNotes||'')}</textarea>`,o.platformCheckAt?('Lần lưu gần nhất: '+new Date(o.platformCheckAt).toLocaleString('vi-VN')):'')}
+    <div class="mb-4">${btn('Lưu ghi chú xác minh','type="button" data-act="savePlatformNotes" data-id="'+o.id+'"','ghost')}</div>
+    ${o.escalation?`<div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-sm font-semibold px-3 py-2 mb-4">⚠ Đã hướng dẫn hai bên liên hệ cơ quan có thẩm quyền lúc ${new Date(o.escalation.at).toLocaleString('vi-VN')}. Các lệnh tự động của giao dịch đã bị khoá.</div>`:''}
+    ${field('Căn cứ & hướng xử lý (sẽ gửi cho hai bên)',`<textarea id="verdict-basis" class="${inCls} min-h-[84px]" placeholder="Nêu căn cứ chính và hướng xử lý…"></textarea>`,'Bắt buộc khi chốt phán quyết.')}
+    <div class="grid sm:grid-cols-3 gap-2">
+      ${btn('Người mua thắng (hoàn tiền)','data-act="settleBuyerWin" data-id="'+o.id+'"','danger')}
+      ${btn('Người bán thắng (giải ngân)','data-act="settleSellerWin" data-id="'+o.id+'"')}
+      ${btn('Chia tỷ lệ tuỳ chỉnh','data-act="ruleSplit" data-id="'+o.id+'"','navy')}
+    </div>
+    ${!o.escalation?`<div class="mt-3">${btn('Vượt thẩm quyền / có dấu hiệu vi phạm pháp luật → hướng dẫn liên hệ cơ quan chức năng','data-act="escalate" data-id="'+o.id+'"','ghost')}</div>`:''}`,'mb-5');
+}
+function disputePanel(o){
+  if(o.status!=='DISPUTED') return '';
+  const active=o.hearing&&!o.hearing.verdict;
+  const tab=state.disputeTab||(active?'meet':'msg');
+  const tabs=[['msg','💬 Nhắn tin từng bên'],['call','📞 Gọi điện từng bên'],['meet','🎥 Google Meet đối chất']];
+  const chip=active?`<div class="text-xs font-semibold bg-navy-50 rounded-lg px-3 py-1.5 mb-3 inline-block">🎥 Phiên Meet đang chạy · hạn chót: <b id="hearingTimer" class="font-mono"></b></div>`:'';
+  return card(`<h3 class="font-extrabold mb-1">Phương án xử lý khiếu nại</h3>
+    <p class="text-xs text-navy-400 mb-3">Chọn cách làm việc với hai bên — có thể dùng lần lượt cả ba. Mọi nhật ký được lưu lại trong giao dịch.</p>
+    ${chip}
+    <div class="flex gap-1.5 flex-wrap mb-4">${tabs.map(([k,l])=>`<button type="button" data-act="setDisputeTab" data-tab="${k}" class="px-3 py-1.5 rounded-lg text-sm font-semibold ${tab===k?'bg-navy-800 text-white':'bg-navy-50 text-navy-700 hover:bg-navy-100'}">${l}</button>`).join('')}</div>
+    ${tab==='msg'?msgTab(o):tab==='call'?callTab(o):meetTab(o)}`,'mb-5')+decisionPanel(o);
+}
+function inquirySummary(o,fmt){
+  if(o.status==='DISPUTED') return '';
+  const am=o.adminMsgs||{}, cl=o.calls||{};
+  const rows=[];
+  [['buyer','Người mua'],['seller','Người bán']].forEach(([s,l])=>{
+    (am[s]||[]).forEach(m=>rows.push({ts:m.ts,t:`💬 Nhắn tin ${l}: ${m.from==='admin'?'Admin':l} — ${m.text}`}));
+    (cl[s]||[]).forEach(c=>rows.push({ts:c.ts,t:`📞 Gọi ${l}: ${c.outcome}${c.note?' — '+c.note:''}`}));
+  });
+  if(!rows.length) return '';
+  rows.sort((a,b)=>a.ts-b.ts);
+  return card(`<h3 class="font-extrabold mb-3">Nhật ký xử lý khiếu nại</h3><div class="grid gap-2">${rows.map(r=>`<div class="text-sm flex gap-3"><span class="font-mono text-xs text-navy-400 shrink-0 pt-0.5">${fmt(r.ts)}</span><span>${esc(r.t)}</span></div>`).join('')}</div>`,'mb-5');
+}
+function transactionDetail(){
+  const o=orderOf(state.orderId); if(!o) return adminTransactions();
+  const backTo = o.status==='DISPUTED' ? 'disputes' : 'transactions';
+  const backLabel = o.status==='DISPUTED' ? '← Trung tâm tranh chấp' : '← Tất cả giao dịch';
+  const fmt=t=>t?new Date(t).toLocaleString('vi-VN'):'—';
+  const uidShort=u=>u?u.slice(0,8)+'…':'—';
+  const logs=webhookLog.filter(e=>e.orderId===o.id).slice().sort((a,b)=>a.ts-b.ts);
+  const steps=[
+    ['Khởi tạo phòng', o.createdAt],
+    ['Đối tác xác nhận giữ tiền', o.paidAt],
+    ['Người bán xác nhận đã giao vé', o.deliveredAt],
+    ['Tiền vào tài khoản người bán', o.completedAt],
+    ['Hoàn tiền về người mua', o.refundedAt]
+  ];
+  const typeLabel={COLLECTION:'Thu tiền từ người mua',PAYOUT:'Giải ngân cho người bán',REFUND:'Hoàn tiền cho người mua'};
+  return `<button data-go="${backTo}" class="text-sm font-semibold text-navy-400 mb-3">${backLabel}</button>
+  <div class="flex items-center justify-between flex-wrap gap-2 mb-4"><h1 class="text-xl font-extrabold">${esc(o.itemName)} · ${esc(o.tier)}</h1>${badge(o.status)}</div>
+  <div class="grid lg:grid-cols-2 gap-4 mb-5">
+    ${card(`<h3 class="font-extrabold mb-3">Thông tin giao dịch</h3>
+      <dl class="grid grid-cols-[150px_1fr] gap-y-2.5 text-sm">
+        <dt class="text-navy-400">Mã giao dịch</dt><dd class="font-mono font-semibold">${esc(o.id)}</dd>
+        <dt class="text-navy-400">Mã phòng</dt><dd class="font-mono font-semibold">${esc(o.roomCode)}</dd>
+        <dt class="text-navy-400">Mã đối tác thanh toán</dt><dd class="font-mono">${esc(o.partnerTxId||'—')}</dd>
+        <dt class="text-navy-400">Người mua</dt><dd>${o.buyerName?esc(o.buyerName):'Chưa tham gia'} <span class="text-navy-300 font-mono text-xs">${uidShort(o.buyerUserId)}</span></dd>
+        <dt class="text-navy-400">Người bán</dt><dd>${o.sellerName?esc(o.sellerName):'Chưa tham gia'} <span class="text-navy-300 font-mono text-xs">${uidShort(o.sellerUserId)}</span></dd>
+        <dt class="text-navy-400">Số lượng</dt><dd>${o.qty} vé</dd>
+        <dt class="text-navy-400">Giá trị đơn</dt><dd>${money(o.amount)}</dd>
+        <dt class="text-navy-400">Người mua trả</dt><dd>${money(o.buyerTotal)}</dd>
+        <dt class="text-navy-400">Người bán nhận</dt><dd>${money(o.sellerReceive)}</dd>
+      </dl>`)}
+    ${card(`<h3 class="font-extrabold mb-3">Mốc thời gian</h3>
+      <ol class="grid gap-3">${steps.map(([l,t])=>`<li class="flex justify-between gap-3 text-sm"><span class="${t?'':'text-navy-300'}">${l}</span><span class="font-mono ${t?'font-semibold':'text-navy-300'}">${fmt(t)}</span></li>`).join('')}</ol>`)}
+  </div>
+  ${partiesCard(o)}
+  ${reviewPanel(o)}
+  ${accountRiskCard(o)}
+  ${complaintCard(o,fmt)}
+  ${o.disputeReason?`<div class="grid lg:grid-cols-2 gap-4 mb-5">
+    <div>${card(`<h3 class="font-extrabold mb-2">Nội dung khiếu nại từ ${o.disputeBy==='seller'?'người bán':'người mua'}</h3>
+      <p class="text-sm bg-red-50 ring-1 ring-red-200 rounded-xl p-3 mb-3"><b>Lý do:</b> ${esc(o.disputeReason)}</p>
+      <div class="flex flex-wrap gap-2">${(o.disputeEvidence||[]).map(e=>`<span class="text-xs bg-navy-100 rounded-lg px-2.5 py-1">📎 ${esc(e)}</span>`).join('')||'<span class="text-xs text-navy-300">Không có bằng chứng đính kèm.</span>'}</div>`)}</div>
+    <div>${card(`<h3 class="font-extrabold mb-2">Bằng chứng giao vé từ người bán</h3>
+      <div class="flex flex-wrap gap-2">${(o.evidences||[]).map(e=>`<span class="text-xs bg-navy-100 rounded-lg px-2.5 py-1">📎 ${esc(e)}</span>`).join('')||'<span class="text-xs text-navy-300">Chưa có bằng chứng giao vé.</span>'}</div>`)}</div>
+  </div>`:''}
+  ${card(`<h3 class="font-extrabold mb-3">Lịch sử trao đổi</h3><div class="grid gap-2 max-h-60 overflow-y-auto">${(o.messages||[]).map(m=>`<div class="max-w-[70%] ${m.from==='buyer'?'':'ml-auto'} ${m.from==='buyer'?'bg-navy-50':'bg-mint-50'} rounded-xl px-3 py-2 text-sm"><b class="text-xs block text-navy-400">${m.from==='buyer'?esc(o.buyerName||'Người mua'):esc(o.sellerName||'Người bán')}</b>${esc(m.text)}</div>`).join('')||'<p class="text-navy-300 text-sm">Không có hội thoại.</p>'}</div>`,'mb-5')}
+  ${card(`<h3 class="font-extrabold mb-3">Lịch sử API &amp; Webhook của giao dịch này</h3>
+    <div class="overflow-x-auto"><table class="w-full text-sm min-w-[600px]">
+      <thead class="text-navy-400 text-xs uppercase"><tr><th class="text-left py-2">Thời gian</th><th class="text-left py-2">Loại</th><th class="text-left py-2">Số tiền</th><th class="text-left py-2">Trạng thái</th><th class="text-left py-2">Mã tham chiếu</th><th class="text-left py-2">Chi tiết</th></tr></thead>
+      <tbody>${logs.map(e=>`<tr class="border-t border-navy-50"><td class="py-2 mono text-navy-400">${fmt(e.ts)}</td><td class="py-2">${typeLabel[e.type]||e.type}</td><td class="py-2">${money(e.payload&&e.payload.amount)}</td><td class="py-2"><span class="text-xs font-bold px-2 py-0.5 rounded-full ${e.status==='SUCCESS'?'bg-mint-100 text-mint-700':'bg-red-100 text-red-700'}">${e.status}</span></td><td class="py-2 mono text-navy-300 text-xs">${esc((e.payload&&e.payload.idk)||e.id)}</td><td class="py-2 text-xs ${e.payload&&e.payload.reason?'text-red-600 font-semibold':'text-navy-400'}">${esc((e.payload&&(e.payload.reason||e.payload.acct))||'—')}</td></tr>`).join('')||`<tr><td colspan="6" class="py-8 text-center text-navy-300">Chưa có sự kiện API/webhook nào cho giao dịch này.</td></tr>`}</tbody>
+    </table></div>`,'mb-5')}
+  ${hearingSummary(o,fmt)}
+  ${inquirySummary(o,fmt)}
+  ${resolutionAdmin(o,fmt)}
+  ${disputePanel(o)}`;
+}
+function adminSettings(){
+  return `<h1 class="text-2xl font-extrabold mb-1">Cấu hình hệ thống</h1><p class="text-navy-400 text-sm mb-5">Phí dịch vụ, thời gian tự động hoàn tất và khoá API đối tác. (Chỉ áp dụng cho phiên xem của bạn trong bản prototype này.)</p>
+  <div class="grid lg:grid-cols-2 gap-5">
+    ${card(`<h3 class="font-extrabold mb-3">Phí & thời gian</h3>
+      ${field('Phí dịch vụ nền tảng (%)',`<input id="st-fee" type="number" step="0.1" class="${inCls}" value="${settings.feePercent}">`)}
+      ${field('Phí cố định cổng thanh toán (đ)',`<input id="st-fixed" type="number" step="500" class="${inCls}" value="${settings.fixedFee}">`)}
+      ${field('Phí % cổng thanh toán',`<input id="st-partner" type="number" step="0.1" class="${inCls}" value="${settings.partnerFeePercent}">`)}
+      ${field('Thời hạn tiếp nhận khiếu nại (ngày làm việc)',`<input id="st-ack" type="number" min="0" class="${inCls}" value="${esc(settings.ackDays)}" placeholder="Để trống nếu chưa cam kết">`,'Chỉ điền khi đội ngũ chắc chắn đáp ứng được. Để trống thì tin báo tiếp nhận không nêu thời hạn.')}
+      ${btn('Lưu cấu hình','data-act="saveSettings"')}`)}
+    ${card(`<h3 class="font-extrabold mb-3">API cổng thanh toán</h3>
+      ${field('Đối tác',`<select class="${inCls}"><option>MoMo Business</option><option>Bảo Kim</option><option>PayOS</option></select>`)}
+      ${field('API Key',`<input class="${inCls} mono" value="${esc(settings.apiKey)}" readonly>`)}
+      ${field('Secret Key',`<input class="${inCls} mono" type="password" value="${esc(settings.apiSecret)}" readonly>`)}
+      <p class="text-xs text-navy-400">Mọi webhook đến đều được xác minh chữ ký HMAC-SHA256; mọi lệnh Payout/Refund gửi đi đều kèm Idempotency-Key để tránh chuyển tiền trùng lặp.</p>`)}
+  </div>`;
+}
+
+/* ================= RENDER / ROUTER ================= */
+const SUBNAV={
+  buyer:[['home','Phòng của tôi']],
+  seller:[['sellerOrders','Đơn bán'],['create','Tạo phòng mới'],['payout','Cài đặt nhận tiền']],
+  admin:[['overview','Tổng quan'],['transactions','Giao dịch'],['disputes','Tranh chấp'],['settings','Cấu hình']]
+};
+const state={ role:null, screen:'roleGate', orderId:null, create:{}, err:'',
+  buyerOnboarded:false, sellerOnboarded:false, adminUnlocked:false,
+  buyerDisplayName:'', buyerPhone:'', sellerDisplayName:'', sellerPhone:'' };
+
+function render(){
+  if(!booted){
+    $('#roleTabsWrap').style.visibility='hidden'; $('#subnav').innerHTML='';
+    $('#app').innerHTML='<div class="min-h-[60vh] grid place-items-center text-navy-400 text-sm">Đang kết nối dữ liệu…</div>';
+    return;
+  }
+  if(!state.role){
+    $('#roleTabsWrap').style.visibility='hidden';
+    $('#subnav').innerHTML='';
+    $('#app').innerHTML=`<div class="fade">${roleGate()}</div>`;
+    return;
+  }
+  $('#roleTabsWrap').style.visibility='visible';
+  if(state.adminUnlocked && !$('#roleTabsWrap [data-role="admin"]')){
+    const b=document.createElement('button');
+    b.dataset.role='admin'; b.className='rtab px-3 py-1.5 rounded-lg transition'; b.textContent='Quản trị';
+    $('#roleTabsWrap').appendChild(b);
+  }
+  $all('.rtab').forEach(b=>{
+    const on=b.dataset.role===state.role;
+    b.className='rtab px-3 py-1.5 rounded-lg transition '+(on?'bg-mint-500 text-navy-900 font-extrabold':'text-navy-200 hover:text-white');
+  });
+  const nav=SUBNAV[state.role]||[];
+  $('#subnav').innerHTML=nav.map(([k,l])=>`<button data-go="${k}" class="px-3 py-1.5 rounded-lg font-semibold ${state.screen===k?'bg-white/10 text-white':'text-navy-300 hover:text-white'}">${l}</button>`).join('');
+
+  let html='';
+  if(state.role==='buyer'){
+    if(state.screen==='onboardBuyer') html=onboardBuyer();
+    else if(state.screen==='payment') html=buyerPayment();
+    else if(state.screen==='room') html=buyerRoom();
+    else { state.screen='home'; html=buyerHome(); }
+  } else if(state.role==='seller'){
+    if(state.screen==='onboardSeller') html=onboardSeller();
+    else if(state.screen==='create') html=sellerCreate();
+    else if(state.screen==='shareRoom') html=shareRoom();
+    else if(state.screen==='payout') html=sellerPayout();
+    else if(state.screen==='room') html=roomScreen('seller');
+    else { state.screen='sellerOrders'; html=sellerOrders(); }
+  } else {
+    if(state.screen==='transactions') html=adminTransactions();
+    else if(state.screen==='transactionDetail') html=transactionDetail();
+    else if(state.screen==='disputes') html=adminDisputes();
+    else if(state.screen==='settings') html=adminSettings();
+    else { state.screen='overview'; html=adminOverview(); }
+  }
+  $('#app').innerHTML=`<div class="fade">${html}</div>`;
+  renderGen++; startTimers(renderGen);
+}
+let renderGen=0;
+function startTimers(gen){
+  const myGen = gen===undefined ? renderGen : gen;
+  const cd=$('#countdown');
+  if(cd){ const o=orderOf(state.orderId);
+    const tick=()=>{ if(myGen!==renderGen) return; const rem=o.paymentDeadline-Date.now();
+      if(rem<=0){ cd.textContent='Hết hạn'; return; }
+      cd.textContent=pad(Math.floor(rem/60000))+':'+pad(Math.floor(rem/1000)%60); setTimeout(tick,1000); };
+    tick();
+  }
+  const at=$('#autoTimer');
+  if(at){ const o=orderOf(state.orderId); const end=o.deliveredAt+o.inspectionHours*3600*1000;
+    const tick=()=>{ if(myGen!==renderGen) return; const rem=end-Date.now(); if(rem<=0){ at.textContent='00:00:00'; if(autoCompleteIfDue(o)) render(); return;}
+      const h=Math.floor(rem/3600000),m=Math.floor(rem/60000)%60,s=Math.floor(rem/1000)%60;
+      at.textContent=pad(h)+':'+pad(m)+':'+pad(s); setTimeout(tick,1000); };
+    tick();
+  }
+  const ht=$('#hearingTimer');
+  if(ht){ const o=orderOf(state.orderId);
+    if(o && o.hearing && !o.hearing.verdict){
+      const tick=()=>{ if(myGen!==renderGen) return;
+        const rem=o.hearing.deadlineAt-Date.now();
+        if(rem<=0){ ht.textContent='Đã hết giờ'; maybeAutoResolve(o); return; }
+        ht.textContent=pad(Math.floor(rem/60000))+':'+pad(Math.floor(rem/1000)%60); setTimeout(tick,1000); };
+      tick();
+    }
+  }
+}
+
+/* ================= ACTIONS ================= */
+function go(screen,ds){
+  state.err='';
+  if(screen==='transactionDetail') state.disputeTab=null;
+  if(ds&&ds.id) state.orderId=ds.id;
+  state.screen=screen;
+  window.scrollTo(0,0); render();
+}
+let logoClicks=[];
+(function(){
+  const lb=$('#logoBtn');
+  if(lb) lb.addEventListener('click',()=>{
+    const now=Date.now(); logoClicks=logoClicks.filter(t=>now-t<1600); logoClicks.push(now);
+    if(logoClicks.length>=5){ logoClicks=[]; openAdminPasscode(); }
+  });
+})();
+
+document.addEventListener('click',async e=>{
+  const rb=e.target.closest('[data-role]');
+  if(rb){
+    const r=rb.dataset.role;
+    if(r==='admin'){ state.role='admin'; state.screen='overview'; render(); return; }
+    if(r==='buyer'){ state.role='buyer'; state.screen=state.buyerOnboarded?'home':'onboardBuyer'; render(); return; }
+    if(r==='seller'){ state.role='seller'; state.screen=state.sellerOnboarded?'sellerOrders':'onboardSeller'; render(); return; }
+  }
+  const g=e.target.closest('[data-go]'); if(g){ go(g.dataset.go,g.dataset); return; }
+  const a=e.target.closest('[data-act]'); if(!a) return;
+  const act=a.dataset.act, id=a.dataset.id;
+  if(act==='closeModal'){ closeModal(); return; }
+
+  if(act==='pickRole'){
+    state.role=a.dataset.role; state.err='';
+    state.screen = state.role==='buyer' ? (state.buyerOnboarded?'home':'onboardBuyer') : (state.sellerOnboarded?'sellerOrders':'onboardSeller');
+    render(); return;
+  }
+  if(act==='submitAdminCode'){
+    const v=$('#adm-code').value.trim().toUpperCase();
+    if(v===ADMIN_PASSCODE){ state.adminUnlocked=true; state.role='admin'; state.screen='overview'; closeModal(); toast('Đã mở khoá chế độ Quản trị'); render(); }
+    else toast('Mã truy cập không đúng','err');
+    return;
+  }
+  if(act==='openJoin2'){ openJoinModal(a.dataset.role); return; }
+  if(act==='doJoin2'){
+    const code=$('#jm-code').value.trim(), pass=$('#jm-pass').value.trim(), role=a.dataset.role;
+    if(!code||!pass){ toast('Nhập đủ mã phòng và mật khẩu','err'); return; }
+    const name = role==='buyer'?state.buyerDisplayName:state.sellerDisplayName;
+    const r=joinRoom(code,pass,role,name);
+    if(!r.ok){ toast(r.msg,'err'); return; }
+    closeModal(); toast('Đã vào phòng thành công'); go('room',{id:r.order.id}); return;
+  }
+
+  if(act==='checkAccName'){
+    const no=$('#p-no').value.trim();
+    if(!no){ toast('Nhập số tài khoản trước đã','err'); return; }
+    $('#p-name').value=fakeHolderName(state.sellerDisplayName); toast('Đã xác minh chủ tài khoản (mô phỏng)'); return;
+  }
+  if(act==='savePayout'){
+    const payout={bank:$('#p-bank').value, no:$('#p-no').value.trim(), name:$('#p-name').value.trim(), verified:true, phone:(mySellerPayout&&mySellerPayout.phone)||state.sellerPhone||''};
+    if(!payout.no||!payout.name){ toast('Điền đủ thông tin nhận tiền','err'); return; }
+    payout.hash=await hashAcct(payout.bank,payout.no);
+    mySellerPayout=payout; persistPayout(payout);
+    toast('Đã lưu thông tin nhận tiền'); go('sellerOrders'); return;
+  }
+  if(act==='checkAccNameOnboard'){
+    const no=$('#os-no').value.trim();
+    if(!no){ toast('Nhập số tài khoản trước đã','err'); return; }
+    $('#os-accname').value=fakeHolderName($('#os-name').value); toast('Đã xác minh chủ tài khoản (mô phỏng)'); return;
+  }
+  if(act==='checkAccNameBuyer'){
+    const no=$('#ob-no').value.trim();
+    if(!no){ toast('Nhập số tài khoản trước đã','err'); return; }
+    $('#ob-accname').value=fakeHolderName($('#ob-name').value); toast('Đã xác minh chủ tài khoản (mô phỏng)'); return;
+  }
+  if(act==='simPaid'){
+    const o=orderOf(id); o.status='HOLDING_BY_PARTNER'; o.partnerTxId='MOMO-TX'+rid(); o.paidAt=Date.now();
+    persistOrder(o,{status:o.status,partnerTxId:o.partnerTxId,paidAt:o.paidAt});
+    logEvent(o.id,'MOMO','COLLECTION','SUCCESS',{amount:o.buyerTotal,acct:o.buyerAcctMasked?('Từ '+o.buyerAcctMasked):undefined});
+    toast('Đối tác đã xác nhận giữ tiền'); go('room',{id:o.id}); return;
+  }
+  if(act==='simPaidWrong'){
+    const o=orderOf(id);
+    logEvent(o.id,'MOMO','COLLECTION','FAILED',{amount:o.buyerTotal,reason:'Tiền đến từ tài khoản không khớp tài khoản đã đăng ký — từ chối và hoàn lại',acct:'Từ ••••9999'});
+    toast('Đối tác từ chối: tiền chuyển từ tài khoản không khớp','err'); render(); return;
+  }
+  if(act==='openDeliverForm') openDeliverModal(id);
+  if(act==='openDispute') openDisputeModal(id);
+  if(act==='confirmReceived') openReceiveModal(id);
+  if(act==='openCancel') openCancelModal(id);
+  if(act==='submitReceive'){
+    if(!$('#rc-ack')||!$('#rc-ack').checked){ toast('Hãy tích xác nhận đã nhận vé','err'); return; }
+    const o=orderOf(id); o.status='COMPLETED'; o.completedAt=Date.now();
+    persistOrder(o,{status:o.status,completedAt:o.completedAt});
+    logEvent(o.id,'MOMO','PAYOUT','SUCCESS',{amount:o.sellerReceive,idk:'IDK-'+rid(),acct:o.sellerAcctMasked?('Đến '+o.sellerAcctMasked):undefined});
+    closeModal(); toast('Đã xác nhận — tiền đã giải ngân cho người bán'); go('room',{id:o.id}); return;
+  }
+  if(act==='sendChat'){
+    const inp=$('#chatin'); const t=inp.value.trim(); if(!t) return;
+    const o=orderOf(id); const role=state.role==='buyer'?'buyer':'seller';
+    (o.messages=o.messages||[]).push({from:role,text:t,ts:Date.now()});
+    persistOrder(o,{messages:o.messages});
+    inp.value=''; render();
+    const log=$('#chatlog'); if(log) log.scrollTop=log.scrollHeight; return;
+  }
+  if(act==='attach'){ return; }
+  if(act==='confirmPay'){
+    if(!$('#pay-ack')||!$('#pay-ack').checked){ toast('Hãy tích xác nhận trước khi thanh toán','err'); return; }
+    const o=orderOf(id); o.buyerConfirmedAt=Date.now(); o.paymentDeadline=Date.now()+15*60*1000;
+    persistOrder(o,{buyerConfirmedAt:o.buyerConfirmedAt,paymentDeadline:o.paymentDeadline}); render(); return;
+  }
+  if(act==='submitCancel'){
+    const o=orderOf(id); const reason=$('#cx-reason').value; const at=Date.now();
+    o.cancel={by:'seller',reason,at}; const patch={cancel:o.cancel};
+    if(o.status==='HOLDING_BY_PARTNER'){
+      o.status='REFUNDED'; o.refundedAt=at; patch.status=o.status; patch.refundedAt=at; persistOrder(o,patch);
+      logEvent(o.id,'MOMO','REFUND','SUCCESS',{amount:o.buyerTotal,idk:'IDK-'+rid(),acct:o.buyerAcctMasked?('Đến '+o.buyerAcctMasked+' · người bán huỷ'):'người bán huỷ'});
+      toast('Đã huỷ giao dịch — tiền hoàn về người mua');
+    } else {
+      o.status='CANCELLED'; patch.status=o.status; persistOrder(o,patch); toast('Đã gỡ tin');
+    }
+    closeModal(); render(); return;
+  }
+  if(act==='setTxFilter'){ state.txFilter=a.dataset.f; render(); return; }
+  if(act==='approveListing'){
+    const o=orderOf(id); o.review={...(o.review||{}),status:'APPROVED',decidedAt:Date.now(),by:'admin'};
+    persistOrder(o,{review:o.review});
+    adminNotify(o,'seller','PassTic đã duyệt tin của bạn — người mua có thể vào phòng bằng mã phòng và mật khẩu.');
+    toast('Đã duyệt tin'); render(); return;
+  }
+  if(act==='requestEvidence'){
+    const note=($('#rv-note').value||'').trim(); if(!note){ toast('Nhập nội dung cần bổ sung','err'); return; }
+    const o=orderOf(id); o.review={...(o.review||{}),evidenceRequestedAt:Date.now()};
+    persistOrder(o,{review:o.review});
+    adminNotify(o,'seller','PassTic yêu cầu bổ sung: '+note+'. Vui lòng che dữ liệu nhạy cảm. PassTic không bao giờ yêu cầu mật khẩu hoặc mã OTP.');
+    toast('Đã gửi yêu cầu bổ sung cho người bán'); render(); return;
+  }
+  if(act==='rejectListing'){
+    const note=($('#rv-note').value||'').trim(); if(!note){ toast('Nhập lý do từ chối','err'); return; }
+    const o=orderOf(id); o.review={...(o.review||{}),status:'REJECTED',reason:note,decidedAt:Date.now(),by:'admin'}; o.status='CANCELLED';
+    persistOrder(o,{review:o.review,status:o.status});
+    adminNotify(o,'seller','PassTic từ chối tin: '+note);
+    toast('Đã từ chối tin'); render(); return;
+  }
+  if(act==='ackComplaint'){
+    const o=orderOf(id); if(!o||!o.complaint) return; const at=Date.now();
+    o.complaint.ackAt=at; persistOrder(o,{'complaint.ackAt':at});
+    adminNotify(o,o.complaint.by,'PassTic đã tiếp nhận khiếu nại '+o.complaint.id+' ('+o.complaint.category+').'+(settings.ackDays?' Dự kiến phản hồi trong '+settings.ackDays+' ngày làm việc.':'')+' PassTic không bao giờ yêu cầu mật khẩu hoặc mã OTP.');
+    toast('Đã xác nhận tiếp nhận và thông báo cho bên khiếu nại'); render(); return;
+  }
+  if(act==='escalate'){
+    const o=orderOf(id); const note=($('#pf-notes')&&$('#pf-notes').value||'').trim();
+    o.escalation={at:Date.now(),note}; persistOrder(o,{escalation:o.escalation});
+    const txt='Vụ việc này có thể vượt thẩm quyền xử lý của PassTic hoặc có dấu hiệu vi phạm pháp luật. Vui lòng liên hệ cơ quan có thẩm quyền để được hướng dẫn; PassTic sẽ phối hợp theo yêu cầu hợp pháp. Các lệnh tự động của giao dịch đã được tạm khoá.';
+    adminNotify(o,'buyer',txt); adminNotify(o,'seller',txt);
+    toast('Đã gửi hướng dẫn cho hai bên'); render(); return;
+  }
+  if(act==='partyAppeal'){
+    const t=($('#ap-text').value||'').trim(); if(!t){ toast('Nhập nội dung bổ sung','err'); return; }
+    const o=orderOf(id); o.appeal={by:state.role==='buyer'?'buyer':'seller',text:t,at:Date.now()};
+    persistOrder(o,{appeal:o.appeal}); toast('Đã gửi yêu cầu xem xét lại'); render(); return;
+  }
+  if(act==='setDisputeTab'){ state.disputeTab=a.dataset.tab; render(); return; }
+  if(act==='adminSend'){
+    const side=a.dataset.side, inp=$('#am-'+side), text=inp?inp.value.trim():''; if(!text) return;
+    const o=orderOf(id); const msg={from:'admin',text,ts:Date.now()};
+    if(!o.adminMsgs) o.adminMsgs={buyer:[],seller:[]};
+    o.adminMsgs[side]=[...(o.adminMsgs[side]||[]),msg];
+    persistOrder(o,{['adminMsgs.'+side]:arrayUnion(msg)});
+    toast('Đã gửi tin nhắn'); render(); return;
+  }
+  if(act==='partySendAdmin'){
+    const inp=$('#rm-input'), text=inp?inp.value.trim():''; if(!text) return;
+    const side=state.role==='buyer'?'buyer':'seller';
+    const o=orderOf(id); const msg={from:side,text,ts:Date.now()};
+    if(!o.adminMsgs) o.adminMsgs={buyer:[],seller:[]};
+    o.adminMsgs[side]=[...(o.adminMsgs[side]||[]),msg];
+    persistOrder(o,{['adminMsgs.'+side]:arrayUnion(msg)});
+    render(); return;
+  }
+  if(act==='logCall'){
+    const side=a.dataset.side, o=orderOf(id);
+    const entry={ts:Date.now(),outcome:$('#call-out-'+side).value,note:($('#call-note-'+side).value||'').trim()};
+    if(!o.calls) o.calls={buyer:[],seller:[]};
+    o.calls[side]=[...(o.calls[side]||[]),entry];
+    persistOrder(o,{['calls.'+side]:arrayUnion(entry)});
+    toast('Đã lưu nhật ký cuộc gọi'); render(); return;
+  }
+  if(act==='openMeetNew'){ window.open('https://meet.google.com/new','_blank','noopener'); return; }
+  if(act==='scheduleHearing'){
+    const meet=$('#hr-meet').value.trim(), mins=+$('#hr-minutes').value||15;
+    if(!meet){ toast('Dán link Google Meet trước đã','err'); return; }
+    const o=orderOf(id);
+    o.hearing={meetLink:meet,scheduledAt:Date.now(),deadlineAt:Date.now()+mins*60000,buyerJoined:false,sellerJoined:false,verdict:null,verdictReason:null,verdictAt:null};
+    persistOrder(o,{hearing:o.hearing});
+    toast('Đã gửi lời mời — đếm ngược bắt đầu'); render(); return;
+  }
+  if(act==='joinHearing'){
+    const o=orderOf(id); if(!o||!o.hearing) return;
+    const f=state.role==='buyer'?'buyerJoined':'sellerJoined';
+    o.hearing[f]=true; persistOrder(o,{['hearing.'+f]:true});
+    toast('Đã ghi nhận bạn tham gia cuộc họp'); render(); return;
+  }
+  if(act==='savePlatformNotes'){
+    const notes=$('#pf-notes').value.trim(); const o=orderOf(id);
+    o.platformCheckNotes=notes; o.platformCheckAt=Date.now();
+    persistOrder(o,{platformCheckNotes:notes,platformCheckAt:o.platformCheckAt});
+    toast('Đã lưu ghi chú xác minh'); return;
+  }
+  if(act==='settleBuyerWin'||act==='settleSellerWin'){
+    const basis=(($('#verdict-basis')||{}).value||'').trim();
+    if(!basis){ toast('Nhập căn cứ & hướng xử lý trước khi chốt','err'); return; }
+    settleDispute(orderOf(id),act==='settleBuyerWin'?'buyer':'seller','admin_decision',basis); go('transactionDetail',{id}); return;
+  }
+  if(act==='forceNoShow'){
+    const o=orderOf(id); if(!o||!o.hearing) return;
+    const winner = o.hearing.buyerJoined?'buyer':(o.hearing.sellerJoined?'seller':null);
+    if(!winner){ toast('Không xác định được bên vắng mặt','err'); return; }
+    settleDispute(o,winner,'no_show',winner==='buyer'?'Người bán không tham gia phiên đối chất đúng hạn nên người mua được xử thắng.':'Người mua không tham gia phiên đối chất đúng hạn nên người bán được xử thắng.'); go('transactionDetail',{id}); return;
+  }
+  if(act==='ruleSplit'){
+    openModal(`<div class="p-6"><h3 class="font-extrabold text-lg mb-3">Chia tỷ lệ hoàn/giải ngân</h3>
+      <label class="text-sm font-semibold">% hoàn cho người mua</label>
+      <input id="splitpct" type="range" min="0" max="100" value="50" class="w-full mb-1">
+      <div class="text-center font-extrabold text-lg mb-4"><span id="splitval">50</span>% người mua · <span id="splitval2">50</span>% người bán</div>
+      <textarea id="split-basis" class="${inCls} min-h-[64px] mb-4" placeholder="Căn cứ & hướng xử lý (gửi cho hai bên)"></textarea>
+      <div class="flex gap-2 justify-end">${btn('Huỷ','data-act="closeModal"','ghost')}${btn('Xác nhận phán quyết','data-act="confirmSplit" data-id="'+id+'"','navy')}</div></div>`);
+    const r=$('#splitpct'); r.addEventListener('input',()=>{$('#splitval').textContent=r.value;$('#splitval2').textContent=100-r.value});
+    return;
+  }
+  if(act==='confirmSplit'){
+    const basis=(($('#split-basis')||{}).value||'').trim(); if(!basis){ toast('Nhập căn cứ & hướng xử lý','err'); return; }
+    const pct=+$('#splitpct').value; const o=orderOf(id); o.status='REFUNDED'; o.refundedAt=Date.now();
+    o.resolution={winner:'split',reason:'admin_split',basis,at:Date.now(),pct};
+    const patch={status:o.status,refundedAt:o.refundedAt,resolution:o.resolution};
+    if(o.hearing){ const vAt=Date.now(); o.hearing.verdict='split'; o.hearing.verdictReason='admin_split'; o.hearing.verdictAt=vAt;
+      patch['hearing.verdict']='split'; patch['hearing.verdictReason']='admin_split'; patch['hearing.verdictAt']=vAt; }
+    persistOrder(o,patch);
+    const refundAmt=Math.round(o.buyerTotal*pct/100), payoutAmt=o.sellerReceive-Math.round(o.sellerReceive*pct/100);
+    logEvent(o.id,'MOMO','REFUND','SUCCESS',{amount:refundAmt,idk:'IDK-'+rid(),acct:o.buyerAcctMasked?('Đến '+o.buyerAcctMasked):undefined});
+    logEvent(o.id,'MOMO','PAYOUT','SUCCESS',{amount:payoutAmt,idk:'IDK-'+rid(),acct:o.sellerAcctMasked?('Đến '+o.sellerAcctMasked):undefined});
+    closeModal(); toast(`Đã chia ${pct}% hoàn người mua / ${100-pct}% giải ngân người bán`); go('transactionDetail',{id}); return;
+  }
+  if(act==='saveSettings'){
+    settings.feePercent=+$('#st-fee').value; settings.fixedFee=+$('#st-fixed').value;
+    settings.partnerFeePercent=+$('#st-partner').value; settings.ackDays=($('#st-ack').value||'').trim();
+    toast('Đã lưu cấu hình hệ thống'); return;
+  }
+
+  if(act==='submitBuyerOnboard'){
+    const name=$('#ob-name').value.trim(), phone=$('#ob-phone').value.trim();
+    const bank=$('#ob-bank').value, no=$('#ob-no').value.trim(), accname=$('#ob-accname').value.trim();
+    const code=$('#ob-code').value.trim(), pass=$('#ob-pass').value.trim();
+    state.buyerDisplayName=name; state.buyerPhone=phone; state.obCode=code;
+    if(!name||!phone||!no||!accname||!code||!pass){ state.err='Vui lòng điền đủ tên, SĐT, tài khoản ngân hàng (và bấm "Kiểm tra tên"), mã phòng và mật khẩu.'; render(); return; }
+    const bankObj={bank,no,name:accname,verified:true,phone}; bankObj.hash=await hashAcct(bank,no);
+    myBuyerBank=bankObj;
+    const r=joinRoom(code,pass,'buyer',name);
+    if(!r.ok){ state.err=r.msg; render(); return; }
+    persistBuyerBank(bankObj);
+    state.err=''; state.buyerOnboarded=true;
+    toast('Đã vào phòng giao dịch'); go('room',{id:r.order.id}); return;
+  }
+  if(act==='submitSellerOnboard'){
+    const name=$('#os-name').value.trim(), phone=$('#os-phone').value.trim(), bank=$('#os-bank').value, no=$('#os-no').value.trim(), accname=$('#os-accname').value.trim();
+    state.sellerDisplayName=name; state.sellerPhone=phone;
+    if(!name||!phone||!no||!accname){ state.err='Vui lòng điền tên, số điện thoại, số tài khoản và bấm "Kiểm tra tên" để xác minh chủ tài khoản.'; render(); return; }
+    state.err='';
+    const payout={bank,no,name:accname,verified:true,phone}; payout.hash=await hashAcct(bank,no); mySellerPayout=payout; persistPayout(payout);
+    state.sellerOnboarded=true;
+    toast('Thiết lập xong — giờ hãy tạo phòng đăng vé'); go('create'); return;
+  }
+  if(act==='submitCreate'){
+    const d=state.create;
+    d.itemName=$('#f-item').value.trim(); d.tier=$('#f-tier').value.trim(); d.qty=+$('#f-qty').value||1;
+    d.description=$('#f-desc').value.trim(); d.amount=+$('#f-amount').value||0; d.inspectionHours=+$('#f-insp').value;
+    d.feePayer=d.feePayer||'BUYER'; d.password=$('#f-pass').value.trim();
+    d.eventAt=$('#f-eventat').value; d.issuer=$('#f-issuer').value.trim(); d.restrictions=$('#f-restrict').value.trim(); d.elig=$('#f-elig').checked;
+    if(!d.itemName||!d.tier||!d.amount){ state.err='Vui lòng điền tên show, hạng vé và giá bán.'; render(); return; }
+    if(!d.password){ state.err='Vui lòng đặt mật khẩu phòng để chia sẻ riêng cho người mua.'; render(); return; }
+    if(!d.eventAt){ state.err='Vui lòng nhập ngày giờ diễn ra sự kiện.'; render(); return; }
+    if(new Date(d.eventAt).getTime()<=Date.now()){ state.err='Sự kiện đã diễn ra hoặc thời gian không hợp lệ — không thể đăng vé.'; render(); return; }
+    if(!d.issuer||!d.restrictions){ state.err='Vui lòng điền nơi phát hành vé và hạn chế chuyển giao (ghi "Không có" nếu không có).'; render(); return; }
+    if(!d.elig){ state.err='Bạn cần xác nhận đã kiểm tra điều kiện chuyển giao của vé trước khi đăng.'; render(); return; }
+    if(!myId){ state.err='Chưa kết nối được tài khoản Firebase — tải lại trang rồi thử lại.'; render(); return; }
+    if(!mySellerPayout){ state.err='Bạn chưa đăng ký tài khoản ngân hàng nhận tiền — vào "Cài đặt nhận tiền" trước.'; render(); return; }
+    if(!mySellerPayout.hash){ mySellerPayout.hash=await hashAcct(mySellerPayout.bank,mySellerPayout.no); persistPayout(mySellerPayout); }
+    if(!mySellerPayout.phone) mySellerPayout.phone=state.sellerPhone||'';
+    const o=buildOrder({itemName:d.itemName,tier:d.tier,qty:d.qty,description:d.description,amount:d.amount,feePayer:d.feePayer,inspectionHours:d.inspectionHours,status:'CREATED',roomPassword:d.password,eventAt:new Date(d.eventAt).getTime(),issuer:d.issuer,transferRestrictions:d.restrictions,eligibilityConfirmedAt:Date.now(),sellerUserId:myId,sellerName:state.sellerDisplayName,...acctFields('seller',mySellerPayout)});
+    orders.unshift(o); o.review=autoReview(o); persistNewOrder(o);
+    state.create={}; toast('Đã tạo phòng đăng vé'); go('shareRoom',{id:o.id}); return;
+  }
+});
+document.addEventListener('submit',e=>{
+  if(e.target.id==='deliverForm'){
+    e.preventDefault();
+    const id=e.target.querySelector('[type=submit]').dataset.id; const o=orderOf(id);
+    const code=$('#dv-code').value.trim(); const f=$('#dv-file').files[0];
+    o.status='DELIVERED'; o.deliveredAt=Date.now(); o.deliveryCode=code;
+    o.evidences=o.evidences||[]; o.evidences.push(f?f.name:'xac-nhan-giao-ve.jpg');
+    persistOrder(o,{status:o.status,deliveredAt:o.deliveredAt,deliveryCode:o.deliveryCode,evidences:o.evidences});
+    closeModal(); toast('Đã xác nhận giao vé — đếm ngược thời gian kiểm hàng bắt đầu'); go('room',{id}); return;
+  }
+  if(e.target.id==='disputeForm'){
+    e.preventDefault();
+    const id=e.target.querySelector('[type=submit]').dataset.id; const o=orderOf(id);
+    const reason=$('#dp-reason').value.trim(); if(!reason){ toast('Nhập mô tả vấn đề','err'); return; }
+    const f=$('#dp-file').files[0];
+    const by=state.role==='seller'?'seller':'buyer'; const occ=$('#dp-when').value;
+    o.status='DISPUTED'; o.disputeReason=reason; o.disputeEvidence=[f?f.name:'(chưa đính kèm)']; o.disputeBy=by;
+    o.complaint={id:'KN-'+rid(),category:$('#dp-cat').value,by,occurredAt:occ?new Date(occ).getTime():null,contact:$('#dp-contact').value.trim(),createdAt:Date.now(),ackAt:null};
+    persistOrder(o,{status:o.status,disputeReason:o.disputeReason,disputeEvidence:o.disputeEvidence,disputeBy:by,complaint:o.complaint});
+    closeModal(); toast('Đã gửi khiếu nại — giao dịch tạm khoá chờ Quản trị viên','warn'); go('room',{id}); return;
+  }
+});
+document.addEventListener('change',e=>{
+  if(e.target.id==='chatfile2'){
+    const id=e.target.dataset.id, f=e.target.files[0]; if(!f) return;
+    const o=orderOf(id); (o.evidences=o.evidences||[]).push(f.name);
+    persistOrder(o,{evidences:o.evidences}); render();
+  }
+  if(e.target.name==='feePayer'){ state.create.feePayer=e.target.value; render(); }
+  if(e.target.id==='f-elig'){ state.create.elig=e.target.checked; }
+});
+document.addEventListener('input',e=>{
+  if(!state.create) return;
+  const map={'f-item':'itemName','f-tier':'tier','f-qty':'qty','f-desc':'description','f-amount':'amount','f-pass':'password','f-eventat':'eventAt','f-issuer':'issuer','f-restrict':'restrictions'};
+  const key=map[e.target.id]; if(!key) return;
+  state.create[key]=(e.target.id==='f-amount'||e.target.id==='f-qty')?(+e.target.value||0):e.target.value;
+  if(e.target.id==='f-amount'){
+    const feePayer=state.create.feePayer||'BUYER', f=computeFees(state.create.amount,feePayer);
+    if($('#prv-amount')) $('#prv-amount').textContent=money(state.create.amount);
+    if($('#prv-platform')) $('#prv-platform').textContent=money(f.platformFee);
+    if($('#prv-partner')) $('#prv-partner').textContent=money(f.partnerFee);
+    if($('#prv-total')) $('#prv-total').textContent=money(f.buyerTotal);
+    if($('#prv-receive')) $('#prv-receive').textContent=money(f.sellerReceive);
+  }
+});
+
+render();
+boot();
+</script>
+</body>
+</html>
