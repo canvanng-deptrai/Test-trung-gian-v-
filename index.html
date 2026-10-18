@@ -579,7 +579,6 @@ function ticketInfoCard(o,role){
       <dt class="text-navy-400">Thời gian kiểm vé</dt><dd>${o.inspectionHours} giờ sau khi nhận vé</dd>
     </dl>
     ${o.description?`<p class="text-xs text-navy-500 mt-3">${esc(o.description)}</p>`:''}
-    ${role==='buyer'?'<div class="mt-3">'+feeBadge(o)+'</div>':''}
     ${role==='buyer'?`<p class="text-xs text-navy-400 mt-3"><b>Hoàn tiền:</b> ${esc(REFUND_POLICY)}</p>`:''}
     ${o.review&&o.review.status==='APPROVED'?'<p class="text-[11px] text-navy-300 mt-3">Tin đã qua kiểm tra tính đầy đủ và dấu hiệu rủi ro của PassTic. Đây không phải xác nhận của Ticketbox hay nhà phát hành vé.</p>':''}`);
 }
@@ -711,9 +710,11 @@ function roomScreen(role){
     <aside class="grid gap-4">${helpCard(o,role)}
       ${ticketInfoCard(o,role)}
       ${card(`<h3 class="font-extrabold mb-3">Tóm tắt thanh toán</h3>
+        ${(()=>{const L={BUYER:'Người mua chịu phí',SELLER:'Người bán chịu phí',SPLIT:'Chia đôi phí'}[o.feePayer]; const who=role==='seller'?'Bạn đã chọn':'Người bán đã chọn'; return `<div class="rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-800 text-xs p-3 mb-3"><b>${who}: ${L}.</b> ${o.feePayer==='SELLER'?'Người mua chỉ trả đúng giá vé.':'Đây là lựa chọn của người bán, <u>không phải mặc định của PassTic</u>.'} Người bán có 3 chế độ: người mua chịu / người bán chịu / chia đôi.</div>`;})()}
         <div class="grid gap-1.5 text-sm">
-          <div class="flex justify-between"><span class="text-navy-400">Giá trị đơn</span><b>${money(o.amount)}</b></div>
-          <div class="flex justify-between"><span class="text-navy-400">Phí (${o.feePayer==='BUYER'?'người mua chịu':o.feePayer==='SELLER'?'người bán chịu':'chia đôi'})</span><b>${money(o.feeTotal)}</b></div>
+          <div class="flex justify-between"><span class="text-navy-400">Giá vé</span><b>${money(o.amount)}</b></div>
+          <div class="flex justify-between"><span class="text-navy-400">Phí dịch vụ (tổng)</span><b>${money(o.feeTotal)}</b></div>
+          <div class="flex justify-between"><span class="text-navy-400">└ Phần người mua chịu <i>(theo lựa chọn của người bán)</i></span><b>${money(o.buyerTotal-o.amount)}</b></div>
           <div class="h-px bg-navy-100 my-1"></div>
           <div class="flex justify-between"><span class="font-bold">Người mua trả</span><b>${money(o.buyerTotal)}</b></div>
           <div class="flex justify-between"><span class="font-bold">Người bán nhận</span><b>${money(o.sellerReceive)}</b></div>
